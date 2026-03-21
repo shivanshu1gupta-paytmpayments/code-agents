@@ -142,14 +142,96 @@ def cmd_init():
     print(green(f"  ✓ Initialized in: {cwd}"))
     print(f"  .env written to: {cyan(os.path.join(cwd, '.env'))}")
     print()
-    print(bold("  Next steps:"))
-    print(f"    code-agents start       {dim('# start the server')}")
-    print(f"    code-agents status      {dim('# check server health')}")
-    print(f"    code-agents agents      {dim('# list available agents')}")
-    print()
 
     if prompt_yes_no("Start the server now?", default=True):
-        cmd_start()
+        _start_background(cwd)
+    else:
+        print()
+        print(bold("  Next steps:"))
+        print(f"    code-agents start       {dim('# start the server')}")
+        print(f"    code-agents status      {dim('# check server health')}")
+        print(f"    code-agents agents      {dim('# list available agents')}")
+        print()
+
+
+def _start_background(repo_path: str):
+    """Start the server in background and show a clean summary."""
+    bold, green, yellow, red, cyan, dim = _colors()
+
+    env_file = os.path.join(repo_path, ".env")
+    if os.path.exists(env_file):
+        try:
+            from dotenv import load_dotenv
+            load_dotenv(env_file, override=True)
+        except ImportError:
+            pass
+
+    os.environ["TARGET_REPO_PATH"] = repo_path
+    host = os.getenv("HOST", "0.0.0.0")
+    port = os.getenv("PORT", "8000")
+    display_host = "127.0.0.1" if host == "0.0.0.0" else host
+    base_url = f"http://{display_host}:{port}"
+    log_file = _find_code_agents_home() / "logs" / "code-agents.log"
+
+    # Start server as a background subprocess
+    code_agents_home = str(_find_code_agents_home())
+    server_cmd = [
+        sys.executable, "-m", "code_agents.main",
+    ]
+    env = os.environ.copy()
+    env["TARGET_REPO_PATH"] = repo_path
+
+    import subprocess
+    proc = subprocess.Popen(
+        server_cmd,
+        cwd=code_agents_home,
+        env=env,
+        stdout=subprocess.DEVNULL,
+        stderr=open(str(log_file), "a") if log_file.parent.exists() else subprocess.DEVNULL,
+    )
+
+    # Wait briefly and check it started
+    import time
+    time.sleep(2)
+    if proc.poll() is not None:
+        print(red("  ✗ Server failed to start. Check logs:"))
+        print(f"    {dim(str(log_file))}")
+        print()
+        return
+
+    # Verify health
+    healthy = False
+    try:
+        import httpx
+        r = httpx.get(f"{base_url}/health", timeout=5.0)
+        healthy = r.status_code == 200
+    except Exception:
+        pass
+
+    print()
+    if healthy:
+        print(green(bold("  ✓ Code Agents is running!")))
+    else:
+        print(yellow("  ⏳ Server is starting up (may take a few seconds)..."))
+
+    print()
+    print(f"  {bold('URL:')}            {cyan(base_url)}")
+    print(f"  {bold('Health check:')}   {cyan(f'{base_url}/health')}")
+    print(f"  {bold('Agents list:')}    {cyan(f'{base_url}/v1/agents')}")
+    print(f"  {bold('Diagnostics:')}    {cyan(f'{base_url}/diagnostics')}")
+    print(f"  {bold('Target repo:')}    {repo_path}")
+    print(f"  {bold('Logs:')}           {log_file}")
+    print(f"  {bold('PID:')}            {proc.pid}")
+    print()
+    print(f"  {bold('Commands:')}")
+    print(f"    code-agents status                  {dim('# check server health')}")
+    print(f"    code-agents agents                  {dim('# list agents')}")
+    print(f"    code-agents logs                    {dim('# tail logs')}")
+    print(f"    code-agents test                    {dim('# run tests')}")
+    print(f"    code-agents diff main HEAD          {dim('# see changes')}")
+    print(f"    code-agents pipeline start           {dim('# start CI/CD')}")
+    print(f"    code-agents shutdown                 {dim('# stop the server')}")
+    print()
 
 
 def cmd_start():
@@ -157,37 +239,65 @@ def cmd_start():
     _load_env()
     bold, green, _, _, cyan, dim = _colors()
     cwd = os.getcwd()
+
+    # Check for --background / -bg flag
+    if "--bg" in sys.argv or "--background" in sys.argv:
+        _start_background(cwd)
+        return
+
     host = os.getenv("HOST", "0.0.0.0")
     port = os.getenv("PORT", "8000")
 
     print()
-    print(bold(cyan("  Starting Code Agents...")))
+    print(bold(cyan("  Starting Code Agents (foreground)...")))
     print(dim(f"  Target repo: {cwd}"))
     print(dim(f"  Server:      http://{host}:{port}"))
     print(dim(f"  Logs:        {_find_code_agents_home()}/logs/code-agents.log"))
     print(dim("  Press Ctrl+C to stop"))
+    print(dim("  Tip: use 'code-agents start --bg' to run in background"))
     print()
 
     from .main import main as run_server
     run_server()
 
 
-def cmd_stop():
-    """Stop a running code-agents server."""
+def cmd_shutdown():
+    """Shutdown the running code-agents server by killing the process on its port."""
     bold, green, yellow, red, cyan, dim = _colors()
     _load_env()
+    port = os.getenv("PORT", "8000")
 
-    import httpx
+    print()
+    print(bold(f"  Shutting down Code Agents on port {port}..."))
+
+    # Find process on the port
     try:
-        r = httpx.get(f"{_server_url()}/health", timeout=3.0)
-        if r.status_code == 200:
-            print(yellow("  Server is running but there's no remote stop endpoint."))
-            print(f"  Kill it with: {bold('kill $(lsof -ti:{os.getenv(\"PORT\", \"8000\")})')}")
-            print(f"  Or press Ctrl+C in the terminal running the server.")
+        result = subprocess.run(
+            ["lsof", f"-ti:{port}"],
+            capture_output=True, text=True,
+        )
+        pids = [p.strip() for p in result.stdout.strip().splitlines() if p.strip()]
+        if pids:
+            for pid in pids:
+                os.kill(int(pid), 15)  # SIGTERM
+            import time
+            time.sleep(1)
+            # Verify killed
+            check = subprocess.run(["lsof", f"-ti:{port}"], capture_output=True, text=True)
+            remaining = [p.strip() for p in check.stdout.strip().splitlines() if p.strip()]
+            if remaining:
+                # Force kill
+                for pid in remaining:
+                    os.kill(int(pid), 9)  # SIGKILL
+                print(green(f"  ✓ Server force-stopped (PID: {', '.join(pids)})"))
+            else:
+                print(green(f"  ✓ Server stopped (PID: {', '.join(pids)})"))
         else:
-            print(yellow("  Server returned unexpected status."))
-    except Exception:
-        print(green("  ✓ No server running."))
+            print(green(f"  ✓ No server running on port {port}"))
+    except Exception as e:
+        print(yellow(f"  Could not find server process on port {port}: {e}"))
+        print(f"  Try manually: {bold(f'kill $(lsof -ti:{port})')}")
+    print()
 
 
 def cmd_status():
@@ -707,7 +817,7 @@ def cmd_version():
 COMMANDS = {
     "init":      ("Initialize code-agents in current repo",        cmd_init),
     "start":     ("Start the server",                               cmd_start),
-    "stop":      ("Stop the server",                                cmd_stop),
+    "shutdown":  ("Shutdown the server",                              cmd_shutdown),
     "status":    ("Check server health and config",                 cmd_status),
     "agents":    ("List all available agents",                      cmd_agents),
     "config":    ("Show current .env configuration",                cmd_config),
@@ -739,7 +849,7 @@ def cmd_help():
     print()
     print(bold("  Server:"))
     print(f"    {cyan('start'):<14} Start the server")
-    print(f"    {cyan('stop'):<14} Stop the server")
+    print(f"    {cyan('shutdown'):<14} Shutdown the server")
     print(f"    {cyan('status'):<14} Check server health and config")
     print(f"    {cyan('logs'):<14} Tail the log file                    {dim('[lines]')}")
     print(f"    {cyan('config'):<14} Show current .env configuration")
@@ -790,8 +900,8 @@ def main():
             cmd_init()
         elif command == "start":
             cmd_start()
-        elif command == "stop":
-            cmd_stop()
+        elif command == "shutdown":
+            cmd_shutdown()
         elif command == "status":
             cmd_status()
         elif command == "agents":
