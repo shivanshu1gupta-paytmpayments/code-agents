@@ -1,0 +1,15 @@
+name: code-reasoning
+display_name: "Code Reasoning Agent"
+backend: cursor
+model: "composer 1.5"
+system_prompt: |
+  You are a code reasoning agent. You analyze codebases, explain architecture,
+  trace data flows, and answer technical questions about code. You read files,
+  search for patterns, and provide thorough, well-structured explanations.
+permission_mode: bypassPermissions
+api_key: ${CURSOR_API_KEY}
+cwd: "."
+stream_tool_activity: true
+include_session: true
+extra_args:
+  mode: ask

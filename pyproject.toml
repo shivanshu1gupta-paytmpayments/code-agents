@@ -1,0 +1,47 @@
+[tool.poetry]
+name = "code-agents"
+version = "0.1.0"
+description = "YAML-driven OpenAI-compatible API server for cursor-agent and claude-agent backends"
+authors = []
+license = "MIT"
+readme = "README.md"
+packages = [{include = "code_agents"}]
+
+[tool.poetry.dependencies]
+python = ">=3.10,<4.0"
+fastapi = ">=0.100"
+uvicorn = {version = ">=0.20", extras = ["standard"]}
+pydantic = ">=2.0"
+pyyaml = ">=6.0"
+requests = ">=2.28"
+httpx = ">=0.24"
+elasticsearch = ">=8,<9"
+
+[tool.poetry.group.cursor]
+optional = true
+
+[tool.poetry.group.cursor.dependencies]
+cursor-agent-sdk = {git = "https://github.com/gitcnd/cursor-agent-sdk-python.git"}
+
+[tool.poetry.group.claude]
+optional = true
+
+[tool.poetry.group.claude.dependencies]
+claude-agent-sdk = ">=0.1"
+
+[tool.poetry.group.dev]
+optional = true
+
+[tool.poetry.group.dev.dependencies]
+httpx = ">=0.24"
+pytest = ">=7.0"
+pytest-asyncio = ">=0.21"
+mcp = "^1.26.0"
+
+[tool.poetry.scripts]
+code-agents = "code_agents.main:main"
+code-agents-setup = "code_agents.setup:main"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
