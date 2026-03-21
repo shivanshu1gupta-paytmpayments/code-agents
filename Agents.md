@@ -15,7 +15,7 @@ Code Agents ships with twelve pre-configured agents in the `agents/` directory. 
 | Model | composer 1.5 |
 | Permission Mode | default |
 
-The entry point for users who are unsure which specialist to use. Asks 1-2 clarifying questions about the task, then recommends the appropriate agent (code-reasoning, code-writer, code-reviewer, code-tester, or redash-query) along with its endpoint URL. Does not perform deep analysis itself.
+The entry point for users who are unsure which specialist to use. Asks 1-2 clarifying questions about the task, then recommends the appropriate specialist from all 12 agents (code-reasoning, code-writer, code-reviewer, code-tester, redash-query, git-ops, test-coverage, jenkins-build, jenkins-deploy, argocd-verify, pipeline-orchestrator) along with its endpoint URL. Does not perform deep analysis itself.
 
 ---
 
