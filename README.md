@@ -2,7 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
-[![Tests: 114 passing](https://img.shields.io/badge/tests-138%20passing-brightgreen.svg)]()
+[![Tests: 151 passing](https://img.shields.io/badge/tests-151%20passing-brightgreen.svg)]()
 
 AI-powered code agent platform with interactive chat and a built-in CI/CD pipeline. Define agents in YAML, chat with them from the terminal, and automate: **review → test → build → deploy → verify → rollback**.
 
@@ -14,7 +14,7 @@ curl -fsSL https://raw.githubusercontent.com/shivanshu1gupta-paytmpayments/code-
 
 # Initialize in your project
 cd /path/to/your-project
-code-agents init          # configure keys, write .env
+code-agents init          # configure keys, write config
 code-agents start         # start the server (background)
 code-agents chat          # interactive chat — pick an agent, start talking
 ```
@@ -73,7 +73,8 @@ code-agents help                         # full help with all args
 ### Getting Started
 | Command | Args | Description |
 |---------|------|-------------|
-| `init` | | Configure keys, write .env in current repo |
+| `init` | | Configure keys, write global + per-repo config |
+| `migrate` | | Migrate legacy .env to centralized config |
 | `start` | `[--fg]` | Start server (background). `--fg` for foreground |
 | `chat` | `[agent-name]` | Interactive chat. No args = show agent picker |
 | `setup` | | Full interactive setup wizard (7 steps) |
@@ -168,7 +169,7 @@ Full list: `.env.example`
 ## Testing
 
 ```bash
-poetry run pytest       # 138 tests
+poetry run pytest       # 151 tests
 code-agents doctor      # diagnose setup
 code-agents test        # run tests on target repo
 ```
@@ -201,7 +202,7 @@ code-agents/
     jenkins_build.yaml          jenkins_deploy.yaml
     argocd_verify.yaml          pipeline_orchestrator.yaml
   code_agents/                  # Python package
-    cli.py                      #   CLI: 17 commands (init/start/chat/shutdown/...)
+    cli.py                      #   CLI: 18 commands (init/migrate/start/chat/shutdown/...)
     chat.py                     #   Interactive chat REPL with streaming + tab-completion
     setup.py                    #   Interactive setup wizard
     main.py                     #   Uvicorn server entry point
@@ -224,7 +225,7 @@ code-agents/
       completions.py  agents_list.py  git_ops.py  testing.py
       jenkins.py  argocd.py  pipeline.py  redash.py
       elasticsearch.py  atlassian_oauth_web.py
-  tests/                        # 138 tests
+  tests/                        # 151 tests
     test_chat.py                #   Chat REPL, slash commands, agent parsing, SSE, delegation, tab-completion
     test_cli.py                 #   CLI commands, help, config, curls, dispatcher
     test_git_client.py          #   Git operations (real temp repos)
