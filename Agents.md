@@ -361,6 +361,8 @@ Agent Router  ──→  clarifies task
 
 Use the router for triage, or call specialist agents directly if you already know what you need.
 
+**Fastest way to interact:** `code-agents chat` — pick an agent from the numbered menu, start chatting. Switch anytime with `/agent <name>`.
+
 ---
 
 ## Maintenance
@@ -369,10 +371,9 @@ When you add a new agent, workflow, or integration to the project:
 
 1. Add the agent YAML to `agents/`
 2. Document it in this file (`Agents.md`) following the format above
-3. **Update `README.md`** — specifically:
-   - The **Included Agents** table under "Creating Agents"
-   - The **Option B connections table** under "Open WebUI Integration" (if applicable)
-   - The **Project Structure** tree at the bottom
-   - Any other sections that reference the agent list
+3. Add role description to `AGENT_ROLES` dict in `code_agents/chat.py`
+4. **Update `README.md`** — agents table, project structure
+5. **Update `CLAUDE.md`** and `cursor.md` — architecture section
+6. **Update `agents/agent_router.yaml`** — add to specialists list in system prompt
 
-Keeping both files in sync ensures users discover all available agents regardless of which doc they read first.
+Run `poetry run python initiater/run_audit.py --rules workflow` to verify sync.

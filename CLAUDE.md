@@ -2,113 +2,99 @@
 
 ## What This Project Is
 
-Code Agents is a YAML-driven OpenAI-compatible API server with a built-in CI/CD pipeline. It exposes 12 agents (coding, testing, review, git, Jenkins, ArgoCD, pipeline orchestration) as API endpoints. Users install once, run `code-agents init` in any repo, and get a full deployment platform.
+Code Agents is an AI-powered code agent platform with interactive chat and a CI/CD pipeline. 12 agents exposed as OpenAI-compatible endpoints. CLI-first: `code-agents init` per repo, `code-agents chat` for interactive use.
 
 ## Quick Reference
 
 ```bash
-# Install (one-time)
+# Install
 curl -fsSL https://raw.githubusercontent.com/shivanshu1gupta-paytmpayments/code-agents/main/install.sh | bash
 
-# Initialize in a repo
+# Per-repo setup
 cd /path/to/your-project
-code-agents init                # configure keys, write .env
+code-agents init                    # configure keys, write .env
+code-agents start                   # start server (background)
+code-agents chat                    # interactive chat — pick agent from menu
 
-# Start server
-code-agents start               # foreground
-code-agents start --bg          # background
+# All CLI commands
+code-agents help                    # full help with all args
+code-agents start [--fg]            # start server (--fg for foreground)
+code-agents shutdown                # stop server
+code-agents chat [agent-name]       # interactive chat REPL
+code-agents status                  # health + config
+code-agents doctor                  # diagnose issues
+code-agents agents                  # list 12 agents
+code-agents config                  # show .env (secrets masked)
+code-agents logs [N]                # tail log file
+code-agents branches                # list git branches
+code-agents diff [base] [head]      # git diff (default: main HEAD)
+code-agents test [branch]           # run tests
+code-agents review [base] [head]    # AI code review
+code-agents pipeline start [branch] # start CI/CD pipeline
+code-agents pipeline status [id]    # pipeline status
+code-agents pipeline advance <id>   # advance pipeline step
+code-agents pipeline rollback <id>  # rollback deployment
+code-agents curls [cat|agent]       # show API curl commands
+code-agents setup                   # full setup wizard
+code-agents version                 # version info
 
-# CLI commands
-code-agents help                # show all commands
-code-agents status              # check server health
-code-agents shutdown            # stop the server
-code-agents doctor              # diagnose issues
-code-agents agents              # list 12 agents
-code-agents config              # show .env (secrets masked)
-code-agents logs                # tail log file
-code-agents branches            # list git branches
-code-agents diff main HEAD      # show diff
-code-agents test                # run tests
-code-agents review main HEAD    # AI code review
-code-agents pipeline start      # start CI/CD pipeline
-code-agents pipeline status     # check pipeline
-
-# Run tests
-poetry run pytest               # 47 tests
-
-# Run project audit
+# Dev
+poetry run pytest                   # 47 tests
 poetry run python initiater/run_audit.py
 ```
 
 ## Architecture
 
-- **`agents/*.yaml`** — 12 YAML agent definitions loaded at startup by `config.py:AgentLoader`
-- **`code_agents/`** — FastAPI Python package:
-  - `cli.py` — Unified CLI entry point: `init`, `start`, `shutdown`, `status`, `diff`, `test`, `review`, `pipeline`, `doctor`, `config`, `logs`, `agents`, `branches`, `version`, `setup`, `help`
-  - `setup.py` — Interactive setup wizard (prompts for keys, writes .env)
-  - `main.py` — Uvicorn server launcher
-  - `app.py` — FastAPI app, CORS, lifespan, extensive request/response logging
-  - `config.py` — `AgentConfig` dataclass, `Settings`, `AgentLoader` (reads YAML, expands `${ENV_VAR}`)
-  - `backend.py` — Backend abstraction: `run_agent()` dispatches to cursor CLI, cursor HTTP, or claude
-  - `stream.py` — SSE streaming with tool activity logging (ToolUse/ToolResult tracked per request)
-  - `models.py` — Pydantic request/response models (OpenAI-compatible)
-  - `logging_config.py` — Hourly rotating file handler (current file = last hour, 7 days backup)
-  - `git_client.py` — Async git subprocess wrapper (branches, diff, log, push, status)
-  - `testing_client.py` — Test runner + coverage XML parser (auto-detects pytest/jest/maven/gradle/go)
-  - `jenkins_client.py` — Jenkins REST API client (trigger, poll, logs, CSRF crumb)
-  - `argocd_client.py` — ArgoCD REST API client (status, pods, logs, sync, rollback)
-  - `pipeline_state.py` — In-memory 6-step pipeline state machine
-  - `routers/` — FastAPI route handlers:
-    - `completions.py` — `POST /v1/agents/{name}/chat/completions`
-    - `agents_list.py` — `GET /v1/agents`, `GET /v1/models`
-    - `git_ops.py` — `/git/*` (branches, diff, log, push, status, fetch)
-    - `testing.py` — `/testing/*` (run, coverage, gaps)
-    - `jenkins.py` — `/jenkins/*` (build, status, log, wait)
-    - `argocd.py` — `/argocd/*` (status, pods, logs, sync, rollback, history)
-    - `pipeline.py` — `/pipeline/*` (start, status, advance, fail, rollback, runs)
-    - `redash.py`, `elasticsearch.py`, `atlassian_oauth_web.py`
-- **`tests/`** — 47 tests covering all clients, routers, pipeline state, and validators
-- **`initiater/`** — Project quality audit system (14 rule files + LLM runner)
+- **`code_agents/cli.py`** — Unified CLI entry point: 17 commands (init, start, chat, shutdown, status, doctor, config, logs, branches, diff, test, review, pipeline, agents, curls, setup, version, help)
+- **`code_agents/chat.py`** — Interactive chat REPL: agent picker menu, streaming responses, multi-turn sessions, `/agent` switching, slash commands
+- **`code_agents/setup.py`** — Interactive setup wizard (7 steps)
+- **`code_agents/main.py`** — Uvicorn server launcher
+- **`code_agents/app.py`** — FastAPI app, CORS, lifespan, extensive request/response logging middleware
+- **`code_agents/config.py`** — `AgentConfig`, `Settings`, `AgentLoader` (reads YAML, expands `${ENV_VAR}`)
+- **`code_agents/backend.py`** — Backend abstraction: `run_agent()` dispatches to cursor CLI, cursor HTTP, or claude
+- **`code_agents/stream.py`** — SSE streaming with ToolUse/ToolResult logging per request
+- **`code_agents/models.py`** — Pydantic request/response models (OpenAI-compatible)
+- **`code_agents/logging_config.py`** — Hourly rotating file handler (current = last hour, 7 days backup)
+- **`code_agents/git_client.py`** — Async git subprocess wrapper
+- **`code_agents/testing_client.py`** — Test runner + coverage XML parser (auto-detects pytest/jest/maven/gradle/go)
+- **`code_agents/jenkins_client.py`** — Jenkins REST API client (trigger, poll, logs, CSRF crumb)
+- **`code_agents/argocd_client.py`** — ArgoCD REST API client (status, pods, logs, sync, rollback)
+- **`code_agents/pipeline_state.py`** — In-memory 6-step pipeline state machine
+- **`code_agents/routers/`** — FastAPI route handlers: completions, agents_list, git_ops, testing, jenkins, argocd, pipeline, redash, elasticsearch, atlassian_oauth_web
+- **`agents/*.yaml`** — 12 agent definitions
+- **`tests/`** — 47 tests
+- **`initiater/`** — Project quality audit system (14 rules)
 
 ## Key Patterns
 
-- **CLI-first**: `code-agents init` in any repo writes `.env` there. `code-agents start` reads `.env` from cwd.
+- **CLI-first**: `code-agents init` writes `.env` in cwd. `code-agents start` reads from cwd. `code-agents chat` opens REPL.
+- **Interactive chat**: `code-agents chat` shows numbered agent menu → pick one → REPL with streaming. `/agent <name>` switches. Each agent stays in its role.
 - **Dynamic `repo_path`**: Per-request `?repo_path=` → `TARGET_REPO_PATH` env → `os.getcwd()` fallback.
-- **Agent names are kebab-case** in URLs (e.g., `code-reasoning`), **snake_case** in filenames (e.g., `code_reasoning.yaml`).
-- **`${VAR}` expansion** works in YAML `api_key` and `system_prompt` fields.
+- **Background server**: `code-agents start` launches in background, shows URLs + curl commands. `code-agents shutdown` kills it.
+- **Agent names**: kebab-case in URLs (`code-reasoning`), snake_case in filenames (`code_reasoning.yaml`).
+- **`${VAR}` expansion** in YAML `api_key` and `system_prompt` fields.
 - **Backends**: `"cursor"` (default) or `"claude"`. Each agent picks independently.
 - **Permission modes**: `default` (ask), `acceptEdits` (auto-approve), `bypassPermissions` (read-only).
-- **Background server**: `code-agents init` and `code-agents start --bg` launch as background process.
-- **Hourly log rotation**: `logs/code-agents.log` has only the last hour, backups kept for 7 days.
-
-## Adding a New Agent — Required Updates
-
-1. Create `agents/<name>.yaml`
-2. Add to `agents/agent_router.yaml` system prompt (specialists list)
-3. Add to `README.md`: Included Agents table, Project Structure tree
-4. Add to `Agents.md` with its own section
+- **Hourly log rotation**: `logs/code-agents.log` = last hour, 168 backups (7 days).
 
 ## Environment Variables
 
 Key vars (see `.env.example` for full list):
-- `CURSOR_API_KEY` — Required for cursor backend
-- `CURSOR_API_URL` — Optional; enables HTTP mode
-- `ANTHROPIC_API_KEY` — Required for claude backend
+- `CURSOR_API_KEY` / `ANTHROPIC_API_KEY` — Backend keys
 - `HOST` / `PORT` — Server bind (default `0.0.0.0:8000`)
-- `TARGET_REPO_PATH` — Target repo (auto-detected from cwd if empty)
+- `TARGET_REPO_PATH` — Auto-detected from cwd if empty
 - `JENKINS_URL`, `JENKINS_USERNAME`, `JENKINS_API_TOKEN` — Jenkins CI/CD
 - `JENKINS_BUILD_JOB`, `JENKINS_DEPLOY_JOB` — Job paths (not full URLs)
 - `ARGOCD_URL`, `ARGOCD_AUTH_TOKEN`, `ARGOCD_APP_NAME` — ArgoCD
 
 ## Testing
 
-- 47 tests in `tests/` — run with `poetry run pytest`
-- Covers: git client (real temp repos), testing client (auto-detection, coverage XML parsing), Jenkins/ArgoCD client init, all routers (FastAPI TestClient), pipeline state machine lifecycle, health/diagnostics endpoints
+- 47 tests in `tests/` — `poetry run pytest`
+- Covers: git client (real temp repos), testing client (auto-detection, coverage XML), Jenkins/ArgoCD client init, all FastAPI routers, pipeline state machine, health/diagnostics
 
-## Code Style
+## Adding a New Agent
 
-- Python 3.10+ with type hints
-- FastAPI + Pydantic v2
-- `from __future__ import annotations` used in most modules
-- Async handlers throughout (`async def`)
-- Extensive logging: every request, every git command, every tool use, every pipeline state transition
+1. Create `agents/<name>.yaml`
+2. Add to `agents/agent_router.yaml` system prompt
+3. Add to `Agents.md`, `README.md` agents table
+4. Add role to `AGENT_ROLES` dict in `code_agents/chat.py`
