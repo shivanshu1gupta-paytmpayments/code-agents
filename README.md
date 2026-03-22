@@ -2,7 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
-[![Tests: 114 passing](https://img.shields.io/badge/tests-117%20passing-brightgreen.svg)]()
+[![Tests: 114 passing](https://img.shields.io/badge/tests-138%20passing-brightgreen.svg)]()
 
 AI-powered code agent platform with interactive chat and a built-in CI/CD pipeline. Define agents in YAML, chat with them from the terminal, and automate: **review → test → build → deploy → verify → rollback**.
 
@@ -168,7 +168,7 @@ Full list: `.env.example`
 ## Testing
 
 ```bash
-poetry run pytest       # 117 tests
+poetry run pytest       # 138 tests
 code-agents doctor      # diagnose setup
 code-agents test        # run tests on target repo
 ```
@@ -207,6 +207,7 @@ code-agents/
     main.py                     #   Uvicorn server entry point
     app.py                      #   FastAPI app, middleware, logging
     config.py                   #   Settings + AgentLoader
+    env_loader.py               #   Centralized env loading (global + per-repo)
     backend.py                  #   Backend abstraction (cursor/claude)
     stream.py                   #   SSE streaming + response builders
     models.py                   #   Pydantic request/response models
@@ -223,12 +224,13 @@ code-agents/
       completions.py  agents_list.py  git_ops.py  testing.py
       jenkins.py  argocd.py  pipeline.py  redash.py
       elasticsearch.py  atlassian_oauth_web.py
-  tests/                        # 117 tests
+  tests/                        # 138 tests
     test_chat.py                #   Chat REPL, slash commands, agent parsing, SSE, delegation, tab-completion
     test_cli.py                 #   CLI commands, help, config, curls, dispatcher
     test_git_client.py          #   Git operations (real temp repos)
     test_jenkins_client.py      #   Jenkins + ArgoCD client init
     test_routers.py             #   All FastAPI routers + pipeline lifecycle
+    test_env_loader.py          #   Centralized config loading, var classification
     test_testing_client.py      #   Test detection, coverage, pipeline state
   scripts/                      # Utility scripts
   initiater/                    # Project audit system (14 rules)

@@ -39,7 +39,7 @@ code-agents setup                   # full setup wizard
 code-agents version                 # version info
 
 # Dev
-poetry run pytest                   # 117 tests
+poetry run pytest                   # 138 tests
 poetry run python initiater/run_audit.py
 ```
 
@@ -62,7 +62,7 @@ poetry run python initiater/run_audit.py
 - **`code_agents/pipeline_state.py`** — In-memory 6-step pipeline state machine
 - **`code_agents/routers/`** — FastAPI route handlers: completions, agents_list, git_ops, testing, jenkins, argocd, pipeline, redash, elasticsearch, atlassian_oauth_web
 - **`agents/*.yaml`** — 12 agent definitions
-- **`tests/`** — 117 tests
+- **`tests/`** — 138 tests
 - **`initiater/`** — Project quality audit system (14 rules)
 
 ## Key Patterns
@@ -91,6 +91,7 @@ Key vars (see `.env.example` for full list):
 
 - 117 tests in `tests/` — `poetry run pytest`
 - `test_chat.py` (46): agent roles, `_get_agents` parsing, server check, slash commands, repo detection, SSE parsing, inline agent delegation, tab-completion
+- `test_env_loader.py` (21): agent roles, `_get_agents` parsing, server check, slash commands, repo detection, SSE parsing, inline agent delegation, tab-completion
 - `test_cli.py` (24): server URL, help completeness (all 17 cmds, slash cmds, agents), version, doctor, config, curls, dispatcher
 - `test_git_client.py` (10): ref validation, branches, diff, log, status
 - `test_jenkins_client.py` (5): Jenkins + ArgoCD client init
