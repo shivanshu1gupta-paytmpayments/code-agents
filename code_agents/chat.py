@@ -539,6 +539,52 @@ def _handle_command(cmd: str, state: dict, url: str) -> Optional[str]:
     if command in ("/quit", "/exit", "/q"):
         return "quit"
 
+    elif command == "/restart":
+        import subprocess as _sp
+        port = os.getenv("PORT", "8000")
+        print()
+        print(bold(cyan("  Restarting server...")))
+        # Kill existing
+        try:
+            result = _sp.run(["lsof", f"-ti:{port}"], capture_output=True, text=True)
+            pids = [p.strip() for p in result.stdout.strip().splitlines() if p.strip()]
+            if pids:
+                for pid in pids:
+                    os.kill(int(pid), 15)
+                import time
+                time.sleep(1)
+                # Force kill stragglers
+                check = _sp.run(["lsof", f"-ti:{port}"], capture_output=True, text=True)
+                for pid in [p.strip() for p in check.stdout.strip().splitlines() if p.strip()]:
+                    os.kill(int(pid), 9)
+                print(green(f"  ✓ Server stopped"))
+        except Exception:
+            pass
+        # Start new
+        cwd = state.get("repo_path", os.getcwd())
+        code_agents_home = str(Path(__file__).resolve().parent.parent)
+        env = os.environ.copy()
+        env["TARGET_REPO_PATH"] = cwd
+        log_dir = Path(code_agents_home) / "logs"
+        log_dir.mkdir(exist_ok=True)
+        log_file = log_dir / "code-agents.log"
+        _sp.Popen(
+            [sys.executable, "-m", "code_agents.main"],
+            cwd=code_agents_home,
+            env=env,
+            stdout=_sp.DEVNULL,
+            stderr=open(str(log_file), "a"),
+        )
+        import time
+        for _ in range(10):
+            time.sleep(1)
+            if _check_server(_server_url()):
+                print(green(f"  ✓ Server restarted at {_server_url()}"))
+                break
+        else:
+            print(red(f"  ✗ Server failed to restart. Check: code-agents logs"))
+        print()
+
     elif command == "/run":
         # Manual run: /run <command>
         if not arg:
@@ -554,6 +600,7 @@ def _handle_command(cmd: str, state: dict, url: str) -> Optional[str]:
         print(f"    {cyan('/agent <name>'):<16} Switch to another agent permanently")
         print(f"    {cyan('/agents'):<16} List all available agents")
         print(f"    {cyan('/run <cmd>'):<16} Run a shell command in the repo directory")
+        print(f"    {cyan('/restart'):<16} Restart the server")
         print(f"    {cyan('/rules'):<16} Show active rules for current agent")
         print(f"    {cyan('/session'):<16} Show current session ID")
         print(f"    {cyan('/clear'):<16} Clear session (fresh start, same agent)")
@@ -800,7 +847,7 @@ def chat_main(args: list[str] | None = None):
     }
 
     # Tab-completion for slash commands and agent names
-    _slash_commands = ["/help", "/quit", "/exit", "/agents", "/agent", "/run", "/rules", "/session", "/clear"]
+    _slash_commands = ["/help", "/quit", "/exit", "/agents", "/agent", "/run", "/restart", "/rules", "/session", "/clear"]
     _completer = _make_completer(_slash_commands, list(agents.keys()))
     _has_readline = False
 

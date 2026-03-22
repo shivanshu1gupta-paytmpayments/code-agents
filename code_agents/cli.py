@@ -579,6 +579,45 @@ def cmd_shutdown():
     print()
 
 
+def cmd_restart():
+    """Restart the code-agents server (shutdown + start)."""
+    bold, green, yellow, red, cyan, dim = _colors()
+    _load_env()
+    cwd = _user_cwd()
+    port = os.getenv("PORT", "8000")
+
+    print()
+    print(bold(cyan("  Restarting Code Agents...")))
+    print()
+
+    # Shutdown
+    try:
+        result = subprocess.run(
+            ["lsof", f"-ti:{port}"],
+            capture_output=True, text=True,
+        )
+        pids = [p.strip() for p in result.stdout.strip().splitlines() if p.strip()]
+        if pids:
+            for pid in pids:
+                os.kill(int(pid), 15)  # SIGTERM
+            import time
+            time.sleep(1)
+            # Force kill stragglers
+            check = subprocess.run(["lsof", f"-ti:{port}"], capture_output=True, text=True)
+            remaining = [p.strip() for p in check.stdout.strip().splitlines() if p.strip()]
+            for pid in remaining:
+                os.kill(int(pid), 9)  # SIGKILL
+            print(green(f"  ✓ Server stopped (PID: {', '.join(pids)})"))
+        else:
+            print(dim(f"  No server was running on port {port}"))
+    except Exception as e:
+        print(yellow(f"  Could not stop server: {e}"))
+
+    # Start
+    print()
+    _start_background(cwd)
+
+
 def cmd_status():
     """Check server health and show configuration."""
     bold, green, yellow, red, cyan, dim = _colors()
@@ -1713,6 +1752,7 @@ COMMANDS = {
     "migrate":   ("Migrate legacy .env to centralized config",     cmd_migrate),
     "rules":     ("Manage rules [list|create|edit|delete]",        None),  # special handling
     "start":     ("Start the server",                               cmd_start),
+    "restart":   ("Restart the server (shutdown + start)",          cmd_restart),
     "chat":      ("Interactive chat with agents",                   None),  # special handling
     "shutdown":  ("Shutdown the server",                              cmd_shutdown),
     "status":    ("Check server health and config",                 cmd_status),
@@ -1728,7 +1768,202 @@ COMMANDS = {
     "setup":     ("Full interactive setup wizard",                  None),
     "curls":     ("Show all API curl commands",                     cmd_curls),
     "version":   ("Show version info",                              cmd_version),
+    "completions": ("Generate shell completion script",             None),  # special handling
 }
+
+# Subcommands for commands that take them
+_SUBCOMMANDS = {
+    "rules":    ["list", "create", "edit", "delete"],
+    "pipeline": ["start", "status", "advance", "rollback"],
+    "start":    ["--fg", "--foreground"],
+    "rules create": ["--global", "--agent"],
+    "rules list": ["--agent"],
+    "chat":     list(AGENT_ROLES.keys()) if "AGENT_ROLES" in dir() else [],
+}
+
+# Agent names for chat completion
+try:
+    from .chat import AGENT_ROLES as _AGENT_ROLES
+    _SUBCOMMANDS["chat"] = list(_AGENT_ROLES.keys())
+except Exception:
+    pass
+
+
+def _generate_zsh_completion() -> str:
+    """Generate zsh completion script for code-agents."""
+    cmds = sorted(COMMANDS.keys())
+    cmd_list = " ".join(cmds) + " help"
+    agents = " ".join(sorted(AGENT_ROLES.keys())) if "AGENT_ROLES" in dir() else ""
+
+    return f'''#compdef code-agents
+# Zsh completion for code-agents CLI
+# Install: code-agents completions --zsh >> ~/.zshrc
+
+_code_agents() {{
+    local -a commands
+    commands=(
+        'init:Initialize code-agents in current repo'
+        'migrate:Migrate legacy .env to centralized config'
+        'rules:Manage agent rules (list/create/edit/delete)'
+        'start:Start the server'
+        'restart:Restart the server'
+        'chat:Interactive chat with agents'
+        'shutdown:Shutdown the server'
+        'status:Check server health and config'
+        'agents:List all available agents'
+        'config:Show current configuration'
+        'doctor:Diagnose common issues'
+        'logs:Tail the log file'
+        'diff:Show git diff between branches'
+        'branches:List git branches'
+        'test:Run tests on the target repo'
+        'review:Review code changes with AI'
+        'pipeline:Manage CI/CD pipeline'
+        'setup:Full interactive setup wizard'
+        'curls:Show API curl commands'
+        'version:Show version info'
+        'help:Show help'
+        'completions:Generate shell completion script'
+    )
+
+    local -a rules_subcmds
+    rules_subcmds=('list:List active rules' 'create:Create a new rule' 'edit:Edit a rule file' 'delete:Delete a rule file')
+
+    local -a pipeline_subcmds
+    pipeline_subcmds=('start:Start pipeline' 'status:Show pipeline status' 'advance:Advance pipeline step' 'rollback:Rollback deployment')
+
+    local -a agents
+    agents=({agents})
+
+    if (( CURRENT == 2 )); then
+        _describe 'command' commands
+    elif (( CURRENT == 3 )); then
+        case $words[2] in
+            rules)
+                _describe 'subcommand' rules_subcmds
+                ;;
+            pipeline)
+                _describe 'subcommand' pipeline_subcmds
+                ;;
+            chat)
+                _values 'agent' $agents
+                ;;
+            start)
+                _values 'flag' '--fg' '--foreground'
+                ;;
+        esac
+    elif (( CURRENT == 4 )); then
+        case "$words[2] $words[3]" in
+            "rules create"|"rules list")
+                _values 'flag' '--global' '--agent'
+                ;;
+        esac
+    elif (( CURRENT == 5 )); then
+        case "$words[4]" in
+            --agent)
+                _values 'agent' $agents
+                ;;
+        esac
+    fi
+}}
+
+compdef _code_agents code-agents
+'''
+
+
+def _generate_bash_completion() -> str:
+    """Generate bash completion script for code-agents."""
+    cmds = sorted(COMMANDS.keys())
+    cmd_list = " ".join(cmds) + " help completions"
+
+    return f'''# Bash completion for code-agents CLI
+# Install: code-agents completions --bash >> ~/.bashrc
+
+_code_agents_completions() {{
+    local cur prev commands
+    COMPREPLY=()
+    cur="${{COMP_WORDS[COMP_CWORD]}}"
+    prev="${{COMP_WORDS[COMP_CWORD-1]}}"
+
+    commands="{cmd_list}"
+
+    if [[ $COMP_CWORD -eq 1 ]]; then
+        COMPREPLY=( $(compgen -W "$commands" -- "$cur") )
+    elif [[ $COMP_CWORD -eq 2 ]]; then
+        case "$prev" in
+            rules)
+                COMPREPLY=( $(compgen -W "list create edit delete" -- "$cur") )
+                ;;
+            pipeline)
+                COMPREPLY=( $(compgen -W "start status advance rollback" -- "$cur") )
+                ;;
+            chat)
+                COMPREPLY=( $(compgen -W "agent-router argocd-verify code-reasoning code-reviewer code-tester code-writer git-ops jenkins-build jenkins-deploy pipeline-orchestrator redash-query test-coverage" -- "$cur") )
+                ;;
+            start)
+                COMPREPLY=( $(compgen -W "--fg --foreground" -- "$cur") )
+                ;;
+        esac
+    elif [[ $COMP_CWORD -eq 3 ]]; then
+        case "${{COMP_WORDS[1]}} ${{COMP_WORDS[2]}}" in
+            "rules create"|"rules list")
+                COMPREPLY=( $(compgen -W "--global --agent" -- "$cur") )
+                ;;
+        esac
+    elif [[ $COMP_CWORD -eq 4 ]] && [[ "$prev" == "--agent" ]]; then
+        COMPREPLY=( $(compgen -W "agent-router argocd-verify code-reasoning code-reviewer code-tester code-writer git-ops jenkins-build jenkins-deploy pipeline-orchestrator redash-query test-coverage" -- "$cur") )
+    fi
+}}
+
+complete -F _code_agents_completions code-agents
+'''
+
+
+def cmd_completions(rest: list[str] | None = None):
+    """Generate shell completion script."""
+    rest = rest or []
+    bold, green, yellow, red, cyan, dim = _colors()
+
+    if "--zsh" in rest:
+        print(_generate_zsh_completion())
+    elif "--bash" in rest:
+        print(_generate_bash_completion())
+    elif "--install" in rest:
+        # Auto-detect shell and install
+        shell_rc = None
+        if os.path.exists(os.path.expanduser("~/.zshrc")):
+            shell_rc = os.path.expanduser("~/.zshrc")
+            script = _generate_zsh_completion()
+            marker = "# code-agents completion"
+        elif os.path.exists(os.path.expanduser("~/.bashrc")):
+            shell_rc = os.path.expanduser("~/.bashrc")
+            script = _generate_bash_completion()
+            marker = "# code-agents completion"
+        else:
+            print(red("  Could not detect shell config (~/.zshrc or ~/.bashrc)"))
+            return
+
+        # Check if already installed
+        with open(shell_rc) as f:
+            if marker in f.read():
+                print(green(f"  ✓ Completions already installed in {shell_rc}"))
+                return
+
+        with open(shell_rc, "a") as f:
+            f.write(f"\n{marker}\n")
+            f.write(script)
+            f.write(f"\n")
+
+        print(green(f"  ✓ Completions installed in {shell_rc}"))
+        print(dim(f"    Restart your terminal or run: source {shell_rc}"))
+    else:
+        print()
+        print(bold("  Generate shell completion for code-agents"))
+        print()
+        print(f"    {cyan('code-agents completions --install')}    {dim('Auto-install to ~/.zshrc or ~/.bashrc')}")
+        print(f"    {cyan('code-agents completions --zsh')}        {dim('Print zsh completion script')}")
+        print(f"    {cyan('code-agents completions --bash')}       {dim('Print bash completion script')}")
+        print()
 
 
 def cmd_help():
@@ -1780,6 +2015,11 @@ def cmd_help():
     p(f"        {dim('--fg')}    Run in foreground (shows logs, Ctrl+C to stop)")
     p(f"      {dim('$ code-agents start')}")
     p(f"      {dim('$ code-agents start --fg')}")
+    p()
+    p(f"    {cyan('restart')}")
+    p(f"      Restart the server (shutdown + start).")
+    p(f"      Stops the running server, then starts a new one.")
+    p(f"      {dim('$ code-agents restart')}")
     p()
     p(f"    {cyan('chat')} {dim('[agent-name]')}")
     p(f"      Open interactive chat REPL. If no agent specified, shows a")
@@ -1988,6 +2228,8 @@ def main():
             cmd_init()
         elif command == "start":
             cmd_start()
+        elif command == "restart":
+            cmd_restart()
         elif command == "chat":
             from .chat import chat_main
             chat_main(rest)
@@ -2022,6 +2264,8 @@ def main():
             cmd_migrate()
         elif command == "rules":
             cmd_rules(rest)
+        elif command == "completions":
+            cmd_completions(rest)
         else:
             print(f"  Unknown command: {command}")
             print(f"  Run 'code-agents help' for usage.")
