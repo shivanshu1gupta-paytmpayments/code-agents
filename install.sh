@@ -100,13 +100,57 @@ step "3/5" "Installing Code Agents to ~/.code-agents..."
 
 if [ -f "$CODE_AGENTS_DIR/pyproject.toml" ]; then
     info "Already installed at: $CODE_AGENTS_DIR"
-    dim "Pulling latest..."
     cd "$CODE_AGENTS_DIR"
-    git pull --quiet 2>&1 || warn "Could not pull latest (offline?)"
+
+    # Check current version before pull
+    OLD_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+
+    dim "Pulling latest from GitHub..."
+    PULL_OUTPUT=$(git pull 2>&1)
+    PULL_STATUS=$?
+
+    if [ $PULL_STATUS -ne 0 ]; then
+        warn "Could not pull latest (offline or merge conflict?)"
+        dim "    $PULL_OUTPUT"
+    elif echo "$PULL_OUTPUT" | grep -q "Already up to date"; then
+        info "Already up to date (${OLD_COMMIT})"
+    else
+        NEW_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+        info "Updated: ${OLD_COMMIT} → ${NEW_COMMIT}"
+        echo ""
+        dim "  Files updated:"
+
+        # Show which files changed
+        CHANGED=$(git diff --name-only "${OLD_COMMIT}..${NEW_COMMIT}" 2>/dev/null)
+        if [ -n "$CHANGED" ]; then
+            CHANGED_COUNT=$(echo "$CHANGED" | wc -l | tr -d ' ')
+            echo "$CHANGED" | while read -r file; do
+                dim "    • $file"
+            done
+            echo ""
+            info "${CHANGED_COUNT} file(s) updated"
+        fi
+
+        # Show commit messages
+        COMMITS=$(git log --oneline "${OLD_COMMIT}..${NEW_COMMIT}" 2>/dev/null)
+        if [ -n "$COMMITS" ]; then
+            echo ""
+            dim "  Changes:"
+            echo "$COMMITS" | while read -r line; do
+                dim "    $line"
+            done
+        fi
+    fi
 else
     dim "Cloning from GitHub..."
     git clone "$REPO_URL" "$CODE_AGENTS_DIR" 2>&1 | tail -2
     info "Installed to: $CODE_AGENTS_DIR"
+
+    # Show what was cloned
+    cd "$CODE_AGENTS_DIR"
+    FILE_COUNT=$(git ls-files | wc -l | tr -d ' ')
+    COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+    info "Cloned ${FILE_COUNT} files (commit: ${COMMIT})"
 fi
 
 # ============================================================================
@@ -140,6 +184,8 @@ mkdir -p "$HOME/.local/bin"
 cat > "$HOME/.local/bin/code-agents" << 'WRAPPER'
 #!/usr/bin/env bash
 # Code Agents CLI wrapper — runs 'code-agents' from ~/.code-agents
+# Captures the user's working directory so agents work on THEIR repo
+export CODE_AGENTS_USER_CWD="$(pwd)"
 cd "$HOME/.code-agents" && poetry run code-agents "$@"
 WRAPPER
 chmod +x "$HOME/.local/bin/code-agents"
