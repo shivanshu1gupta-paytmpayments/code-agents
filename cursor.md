@@ -40,15 +40,16 @@ code-agents setup                   # full setup wizard
 code-agents version                 # version info
 
 # Dev
-poetry run pytest                   # 151 tests
+poetry run pytest                   # 169 tests
 ```
 
 ## Architecture
 
-- **`cli.py`** — 18 CLI commands (init, migrate, start, chat, shutdown, status, doctor, config, logs, branches, diff, test, review, pipeline, agents, curls, setup, version, help)
+- **`cli.py`** — 19 CLI commands (init, migrate, rules, start, chat, shutdown, status, doctor, config, logs, branches, diff, test, review, pipeline, agents, curls, setup, version, help)
 - **`chat.py`** — Interactive REPL: agent picker menu, streaming, multi-turn sessions, `/agent` switching, inline agent delegation (`/<agent> <prompt>`), tab-completion, auto-detects git repo from cwd, auto-starts server
 - **`setup.py`** — Interactive setup wizard
 - **`env_loader.py`** — Centralized env loading: global (`~/.code-agents/config.env`) + per-repo (`.env.code-agents`)
+- **`rules_loader.py`** — Agent rules: global (`~/.code-agents/rules/`) + project (`.code-agents/rules/`), auto-refresh
 - **`app.py`** — FastAPI app, CORS, lifespan, request/response logging
 - **`backend.py`** — Backend abstraction: cursor CLI, cursor HTTP, claude (claude-agent-sdk built-in)
 - **`stream.py`** — SSE streaming with ToolUse/ToolResult logging
@@ -57,7 +58,7 @@ poetry run pytest                   # 151 tests
 - **CI/CD routers**: `routers/git_ops.py`, `testing.py`, `jenkins.py`, `argocd.py`, `pipeline.py`
 - **`pipeline_state.py`** — 6-step state machine (connect → review/test → build → deploy → verify → rollback)
 - **`agents/*.yaml`** — 12 agent definitions
-- **`tests/`** — 151 tests
+- **`tests/`** — 169 tests
 
 ## Key Patterns
 
@@ -86,7 +87,7 @@ Runtime (never stored): `TARGET_REPO_PATH` — auto-detected from cwd
 
 ## Testing
 
-151 tests — `poetry run pytest`. Covers: chat REPL (slash commands, agent parsing, SSE streaming, repo detection, inline delegation, tab-completion), centralized env loading (split_vars, load order, var classification), CLI (all 18 commands, help completeness, config, curls, dispatcher), git operations, test framework detection, coverage XML, Jenkins/ArgoCD client init, all routers, pipeline lifecycle, health/diagnostics.
+169 tests — `poetry run pytest`. Covers: chat REPL (slash commands, agent parsing, SSE streaming, repo detection, inline delegation, tab-completion), centralized env loading (split_vars, load order, var classification), CLI (all 19 commands, help completeness, config, curls, dispatcher), git operations, test framework detection, coverage XML, Jenkins/ArgoCD client init, all routers, pipeline lifecycle, health/diagnostics.
 
 ## Adding a New Agent
 
