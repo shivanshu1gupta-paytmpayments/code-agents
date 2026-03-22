@@ -39,14 +39,14 @@ code-agents setup                   # full setup wizard
 code-agents version                 # version info
 
 # Dev
-poetry run pytest                   # 98 tests
+poetry run pytest                   # 114 tests
 poetry run python initiater/run_audit.py
 ```
 
 ## Architecture
 
 - **`code_agents/cli.py`** — Unified CLI entry point: 17 commands (init, start, chat, shutdown, status, doctor, config, logs, branches, diff, test, review, pipeline, agents, curls, setup, version, help)
-- **`code_agents/chat.py`** — Interactive chat REPL: agent picker menu, streaming responses, multi-turn sessions, `/agent` switching, slash commands, auto-detects git repo from cwd, auto-starts server if not running
+- **`code_agents/chat.py`** — Interactive chat REPL: agent picker menu, streaming responses, multi-turn sessions, `/agent` switching, inline agent delegation (`/<agent> <prompt>`), tab-completion for slash commands and agent names, auto-detects git repo from cwd, auto-starts server if not running
 - **`code_agents/setup.py`** — Interactive setup wizard (7 steps)
 - **`code_agents/main.py`** — Uvicorn server launcher
 - **`code_agents/app.py`** — FastAPI app, CORS, lifespan, extensive request/response logging middleware
@@ -62,13 +62,13 @@ poetry run python initiater/run_audit.py
 - **`code_agents/pipeline_state.py`** — In-memory 6-step pipeline state machine
 - **`code_agents/routers/`** — FastAPI route handlers: completions, agents_list, git_ops, testing, jenkins, argocd, pipeline, redash, elasticsearch, atlassian_oauth_web
 - **`agents/*.yaml`** — 12 agent definitions
-- **`tests/`** — 98 tests
+- **`tests/`** — 114 tests
 - **`initiater/`** — Project quality audit system (14 rules)
 
 ## Key Patterns
 
 - **CLI-first**: `code-agents init` writes `.env` in cwd. `code-agents start` reads from cwd. `code-agents chat` opens REPL.
-- **Interactive chat**: `code-agents chat` shows numbered agent menu → pick one → REPL with streaming. `/agent <name>` switches. Each agent stays in its role. Auto-detects git repo from cwd and passes it as `cwd` to the agent. Auto-starts server if not running.
+- **Interactive chat**: `code-agents chat` shows numbered agent menu → pick one → REPL with streaming. `/agent <name>` switches permanently. `/<agent> <prompt>` delegates one-shot to another agent without switching. Tab-completion for all slash commands and agent names. Each agent stays in its role. Auto-detects git repo from cwd and passes it as `cwd` to the agent. Auto-starts server if not running.
 - **Dynamic `repo_path`**: Per-request `?repo_path=` → `TARGET_REPO_PATH` env → `os.getcwd()` fallback.
 - **Background server**: `code-agents start` launches in background, shows URLs + curl commands. `code-agents shutdown` kills it.
 - **Agent names**: kebab-case in URLs (`code-reasoning`), snake_case in filenames (`code_reasoning.yaml`).
@@ -89,8 +89,8 @@ Key vars (see `.env.example` for full list):
 
 ## Testing
 
-- 98 tests in `tests/` — `poetry run pytest`
-- `test_chat.py` (27): agent roles, `_get_agents` parsing, server check, slash commands, repo detection, SSE parsing
+- 114 tests in `tests/` — `poetry run pytest`
+- `test_chat.py` (43): agent roles, `_get_agents` parsing, server check, slash commands, repo detection, SSE parsing, inline agent delegation, tab-completion
 - `test_cli.py` (24): server URL, help completeness (all 17 cmds, slash cmds, agents), version, doctor, config, curls, dispatcher
 - `test_git_client.py` (10): ref validation, branches, diff, log, status
 - `test_jenkins_client.py` (5): Jenkins + ArgoCD client init

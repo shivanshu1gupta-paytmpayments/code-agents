@@ -2,7 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
-[![Tests: 47 passing](https://img.shields.io/badge/tests-98%20passing-brightgreen.svg)]()
+[![Tests: 114 passing](https://img.shields.io/badge/tests-114%20passing-brightgreen.svg)]()
 
 AI-powered code agent platform with interactive chat and a built-in CI/CD pipeline. Define agents in YAML, chat with them from the terminal, and automate: **review → test → build → deploy → verify → rollback**.
 
@@ -46,6 +46,11 @@ $ code-agents chat
 
   you › Write unit tests for the auth module
   code-tester › I'll create tests for the auth module...
+
+  you › /code-reviewer Review the auth module for security issues
+  Delegating to code-reviewer: Review code for bugs, security issues, style violations
+  code-reviewer › Looking at the auth module...
+  (back to code-tester)
 ```
 
 **Key features:**
@@ -53,9 +58,11 @@ $ code-agents chat
 - **Auto-starts server** — if server isn't running, offers to start it for you
 - **Multi-turn sessions** — context is preserved across messages
 - **Streaming** — responses appear in real-time as the agent types
-- **Agent switching** — `/agent code-writer` switches without leaving chat
+- **Agent switching** — `/agent code-writer` switches permanently
+- **Inline delegation** — `/<agent> <prompt>` sends a one-shot to another agent, then returns to your current agent
+- **Tab-completion** — press Tab after `/` to autocomplete slash commands and agent names
 
-Chat commands: `/help /quit /agents /agent <name> /session /clear`
+Chat commands: `/help /quit /agents /agent <name> /session /clear /<agent> <prompt>`
 
 ## CLI Commands
 
@@ -161,7 +168,7 @@ Full list: `.env.example`
 ## Testing
 
 ```bash
-poetry run pytest       # 98 tests
+poetry run pytest       # 114 tests
 code-agents doctor      # diagnose setup
 code-agents test        # run tests on target repo
 ```
@@ -195,7 +202,7 @@ code-agents/
     argocd_verify.yaml          pipeline_orchestrator.yaml
   code_agents/                  # Python package
     cli.py                      #   CLI: 17 commands (init/start/chat/shutdown/...)
-    chat.py                     #   Interactive chat REPL with streaming
+    chat.py                     #   Interactive chat REPL with streaming + tab-completion
     setup.py                    #   Interactive setup wizard
     main.py                     #   Uvicorn server entry point
     app.py                      #   FastAPI app, middleware, logging
@@ -216,8 +223,8 @@ code-agents/
       completions.py  agents_list.py  git_ops.py  testing.py
       jenkins.py  argocd.py  pipeline.py  redash.py
       elasticsearch.py  atlassian_oauth_web.py
-  tests/                        # 98 tests
-    test_chat.py                #   Chat REPL, slash commands, agent parsing, SSE
+  tests/                        # 114 tests
+    test_chat.py                #   Chat REPL, slash commands, agent parsing, SSE, delegation, tab-completion
     test_cli.py                 #   CLI commands, help, config, curls, dispatcher
     test_git_client.py          #   Git operations (real temp repos)
     test_jenkins_client.py      #   Jenkins + ArgoCD client init

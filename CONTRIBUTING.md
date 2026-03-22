@@ -36,6 +36,7 @@ Not all items apply to every change — only update what's relevant.
 - [ ] Add handler in `_handle_command()` in `code_agents/chat.py`
 - [ ] Add to `/help` output inside `_handle_command()`
 - [ ] Add to `cmd_help()` chat slash commands section in `cli.py`
+- [ ] Add to tab-completion list in `_slash_commands` inside `chat_main()`
 - [ ] Add tests in `tests/test_chat.py` TestSlashCommands class
 - [ ] Update `Agents.md` chat commands list
 
@@ -92,7 +93,7 @@ These files must stay in sync. When you change one, check the others:
 |-------------|----------------|
 | Agent list | `agent_router.yaml`, `chat.py` (AGENT_ROLES), `cli.py` (_AGENT_EXAMPLES + help), `Agents.md`, `README.md`, `CLAUDE.md`, `cursor.md` |
 | CLI commands | `cli.py` (function + COMMANDS + help + dispatcher), `README.md`, `CLAUDE.md`, `cursor.md` |
-| Chat slash commands | `chat.py` (_handle_command + /help), `cli.py` (cmd_help chat section), `test_chat.py`, `Agents.md` |
+| Chat slash commands | `chat.py` (_handle_command + /help + _slash_commands list), `cli.py` (cmd_help chat section), `test_chat.py`, `Agents.md` |
 | REST endpoints | `routers/*.py`, `cli.py` (curls), `README.md`, `CLAUDE.md`, `cursor.md` |
 | Env variables | `.env.example`, `setup.py`, `cli.py` (init + doctor), `README.md`, `CLAUDE.md`, `cursor.md` |
 | Test count | `README.md` (badge + text), `CLAUDE.md`, `cursor.md` |
@@ -107,7 +108,7 @@ These files must stay in sync. When you change one, check the others:
 # Install dev dependencies
 poetry install --with dev
 
-# Run tests (must be 98+ passing)
+# Run tests (must be 114+ passing)
 poetry run pytest
 
 # Check project quality

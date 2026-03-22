@@ -10,6 +10,26 @@ code-agents chat code-writer   # go straight to a specific agent
 
 The chat auto-detects your git repo from the current directory, so the agent works on **your project's code** — not the code-agents source.
 
+### Inline Agent Delegation
+
+You don't need to switch agents to use them. From any active chat session, delegate a one-shot prompt to another agent:
+
+```
+you › /code-reviewer Review the auth module for security issues
+  Delegating to code-reviewer: Review code for bugs, security issues, style violations
+  code-reviewer › Looking at the auth module...
+  (back to code-reasoning)
+
+you › /code-tester Write unit tests for PaymentService
+  Delegating to code-tester: Write tests, debug issues, optimize code quality
+  code-tester › Creating tests for PaymentService...
+  (back to code-reasoning)
+```
+
+- `/<agent> <prompt>` — sends a one-shot prompt, returns to your current agent
+- `/<agent>` (no prompt) — switches permanently, same as `/agent <name>`
+- **Tab-completion** — press Tab after `/` to autocomplete agent names and commands
+
 ---
 
 ## Agent Router
@@ -380,7 +400,7 @@ $ code-agents chat
   code-tester › Creating tests...
 ```
 
-Chat commands: `/help /quit /agent <name> /agents /session /clear`
+Chat commands: `/help /quit /agent <name> /agents /session /clear /<agent> <prompt>`
 
 The agent automatically works on **your current project** (detects git repo from cwd).
 If the server isn't running, chat offers to start it for you.
@@ -421,7 +441,7 @@ When you add a new agent, workflow, or integration to the project:
 8. **Add tests** in `tests/` for any new functionality
 
 Run `poetry run python initiater/run_audit.py --rules workflow` to verify sync.
-Run `poetry run pytest` to verify all 98 tests pass.
+Run `poetry run pytest` to verify all 114 tests pass.
 
 ### Key files that reference agent lists
 - `agents/agent_router.yaml` — system prompt lists all specialists
