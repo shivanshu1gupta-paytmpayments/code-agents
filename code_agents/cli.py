@@ -261,7 +261,12 @@ def _start_background(repo_path: str):
 
 
 def _check_workspace_trust(repo_path: str) -> bool:
-    """Check cursor-agent workspace trust for the target repo. Returns True if OK."""
+    """
+    Check and auto-trust cursor-agent workspace for the target repo.
+
+    If the workspace is not trusted, automatically trusts it using
+    cursor-agent --trust --print. Returns True if trust is OK.
+    """
     import shutil
     import subprocess
 
@@ -274,6 +279,7 @@ def _check_workspace_trust(repo_path: str) -> bool:
     if not cli_path:
         return True
 
+    # Quick check: does the workspace need trust?
     try:
         result = subprocess.run(
             [cli_path, "--print", "--output-format", "stream-json", "agent", "-"],
@@ -286,28 +292,45 @@ def _check_workspace_trust(repo_path: str) -> bool:
     except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
         return True
 
-    if "Workspace Trust Required" in (result.stderr or ""):
-        print()
-        print(yellow("  ⚠ Cursor Workspace Trust Required"))
-        print()
-        print(f"    cursor-agent needs to trust this directory:")
-        print(f"    {bold(repo_path)}")
-        print()
-        print(f"    {bold('Fix it (pick one):')}")
-        print()
-        print(f"    {cyan('Option 1:')} Run interactively to approve:")
-        print(f"    {dim(f'  cd {repo_path} && cursor-agent agent')}")
-        print(f"    {dim('  (type y to trust, then Ctrl+C to exit)')}")
-        print()
-        print(f"    {cyan('Option 2:')} Use HTTP mode (no CLI needed):")
-        print(f"    {dim('  Set CURSOR_API_URL in your .env file')}")
-        print()
-        print(f"    {cyan('Option 3:')} Use a Claude backend agent instead:")
-        print(f"    {dim('  Set ANTHROPIC_API_KEY in .env, pick a claude backend agent')}")
-        print()
-        return False
+    if "Workspace Trust Required" not in (result.stderr or ""):
+        return True  # Already trusted
 
-    return True
+    # Auto-trust using --trust flag
+    print(dim(f"  Trusting workspace: {repo_path}"))
+    try:
+        trust_result = subprocess.run(
+            [cli_path, "--trust", "--print", "--output-format", "stream-json", "agent", "-"],
+            cwd=repo_path,
+            input="hi",
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        if "Workspace Trust Required" not in (trust_result.stderr or ""):
+            print(green(f"  ✓ Workspace trusted for cursor-agent"))
+            return True
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        pass
+
+    # Auto-trust failed — show manual instructions
+    print()
+    print(yellow("  ⚠ Could not auto-trust workspace for cursor-agent"))
+    print()
+    print(f"    Directory: {bold(repo_path)}")
+    print()
+    print(f"    {bold('Fix manually (pick one):')}")
+    print()
+    print(f"    {cyan('Option 1:')} Trust interactively:")
+    print(f"    {dim(f'  cd {repo_path} && cursor-agent agent')}")
+    print(f"    {dim('  (type y to trust, then Ctrl+C to exit)')}")
+    print()
+    print(f"    {cyan('Option 2:')} Use HTTP mode (no CLI needed):")
+    print(f"    {dim('  Set CURSOR_API_URL in your .env file')}")
+    print()
+    print(f"    {cyan('Option 3:')} Use a Claude backend agent:")
+    print(f"    {dim('  Set ANTHROPIC_API_KEY in .env')}")
+    print()
+    return False
 
 
 def cmd_start():
@@ -598,10 +621,13 @@ def cmd_doctor():
 
     # .env file
     env_file = os.path.join(cwd, ".env")
-    if os.path.exists(env_file):
+    if os.path.isfile(env_file):
         from .setup import parse_env_file
         env_vars = parse_env_file(Path(env_file))
         print(green(f"  ✓ .env file found ({len(env_vars)} variables)"))
+    elif os.path.isdir(env_file):
+        print(yellow(f"  ! .env is a directory, not a file — code-agents init expects a file"))
+        warnings += 1
     else:
         print(red("  ✗ No .env file — run: code-agents init"))
         issues += 1
@@ -647,9 +673,18 @@ def cmd_doctor():
                     cwd=cwd, input="hi", capture_output=True, text=True, timeout=10,
                 )
                 if "Workspace Trust Required" in (_trust_result.stderr or ""):
-                    print(red(f"  ✗ Workspace not trusted by cursor-agent"))
-                    print(dim(f"    Run: cd {cwd} && cursor-agent agent"))
-                    issues += 1
+                    # Auto-trust with --trust flag
+                    print(dim("  · Trusting workspace..."))
+                    _fix = _sp.run(
+                        [cli_path, "--trust", "--print", "--output-format", "stream-json", "agent", "-"],
+                        cwd=cwd, input="hi", capture_output=True, text=True, timeout=15,
+                    )
+                    if "Workspace Trust Required" not in (_fix.stderr or ""):
+                        print(green("  ✓ Workspace auto-trusted by cursor-agent"))
+                    else:
+                        print(red(f"  ✗ Workspace not trusted — auto-trust failed"))
+                        print(dim(f"    Run: cd {cwd} && cursor-agent agent"))
+                        issues += 1
                 else:
                     print(green("  ✓ Workspace trusted by cursor-agent"))
             except (Exception,):
