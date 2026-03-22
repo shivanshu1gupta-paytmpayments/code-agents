@@ -11,6 +11,8 @@ from code_agents.chat import (
     _check_server,
     _get_agents,
     _handle_command,
+    _make_completer,
+    _parse_inline_delegation,
 )
 
 
@@ -329,3 +331,151 @@ class TestStreamChat:
         line = "data: [DONE]"
         data_str = line[6:]
         assert data_str == "[DONE]"
+
+
+class TestInlineDelegation:
+    """Test inline agent delegation parsing (/agent-name prompt)."""
+
+    AGENTS = {
+        "code-reasoning": "Code Reasoning Agent",
+        "code-writer": "Code Writer Agent",
+        "code-tester": "Code Tester Agent",
+        "code-reviewer": "Code Reviewer Agent",
+        "git-ops": "Git Ops Agent",
+    }
+
+    def test_agent_with_prompt(self):
+        """'/code-reasoning explain auth' → delegation."""
+        agent, prompt = _parse_inline_delegation(
+            "/code-reasoning explain auth", self.AGENTS
+        )
+        assert agent == "code-reasoning"
+        assert prompt == "explain auth"
+
+    def test_agent_no_prompt_returns_empty(self):
+        """'/code-writer' with no prompt → permanent switch signal."""
+        agent, prompt = _parse_inline_delegation("/code-writer", self.AGENTS)
+        assert agent == "code-writer"
+        assert prompt == ""
+
+    def test_unknown_agent(self):
+        """'/nonexistent do stuff' → not a delegation."""
+        agent, prompt = _parse_inline_delegation("/nonexistent do stuff", self.AGENTS)
+        assert agent is None
+        assert prompt is None
+
+    def test_regular_slash_command(self):
+        """'/help' → not a delegation."""
+        agent, prompt = _parse_inline_delegation("/help", self.AGENTS)
+        assert agent is None
+        assert prompt is None
+
+    def test_quit_not_delegation(self):
+        """'/quit' → not a delegation."""
+        agent, prompt = _parse_inline_delegation("/quit", self.AGENTS)
+        assert agent is None
+        assert prompt is None
+
+    def test_not_a_slash_command(self):
+        """Regular text → not a delegation."""
+        agent, prompt = _parse_inline_delegation("hello world", self.AGENTS)
+        assert agent is None
+        assert prompt is None
+
+    def test_multiword_prompt(self):
+        """Prompt with multiple words is captured fully."""
+        agent, prompt = _parse_inline_delegation(
+            "/code-tester write unit tests for PaymentService class", self.AGENTS
+        )
+        assert agent == "code-tester"
+        assert prompt == "write unit tests for PaymentService class"
+
+    def test_git_ops_agent(self):
+        """Agent names with hyphens work."""
+        agent, prompt = _parse_inline_delegation(
+            "/git-ops show the last 5 commits", self.AGENTS
+        )
+        assert agent == "git-ops"
+        assert prompt == "show the last 5 commits"
+
+    def test_empty_agents_dict(self):
+        """No agents available → no match."""
+        agent, prompt = _parse_inline_delegation("/code-reasoning explain", {})
+        assert agent is None
+        assert prompt is None
+
+
+class TestTabCompletion:
+    """Test readline tab-completion for slash commands and agent names."""
+
+    SLASH_COMMANDS = ["/help", "/quit", "/exit", "/agents", "/agent", "/session", "/clear"]
+    AGENT_NAMES = ["code-reasoning", "code-writer", "code-tester", "code-reviewer", "git-ops"]
+
+    def _completer(self):
+        return _make_completer(self.SLASH_COMMANDS, self.AGENT_NAMES)
+
+    def test_complete_slash_shows_all(self):
+        """'/' + Tab cycles through all completions."""
+        completer = self._completer()
+        results = []
+        idx = 0
+        while True:
+            result = completer("/", idx)
+            if result is None:
+                break
+            results.append(result)
+            idx += 1
+        # 7 slash commands + 5 agent names
+        assert len(results) == 12
+        assert "/help" in results
+        assert "/code-reasoning" in results
+
+    def test_complete_code_prefix(self):
+        """'/code-' + Tab shows only code-* agents."""
+        completer = self._completer()
+        results = []
+        idx = 0
+        while True:
+            result = completer("/code-", idx)
+            if result is None:
+                break
+            results.append(result)
+            idx += 1
+        assert set(results) == {"/code-reasoning", "/code-writer", "/code-tester", "/code-reviewer"}
+
+    def test_complete_exact_match(self):
+        """'/help' + Tab returns '/help' then None."""
+        completer = self._completer()
+        assert completer("/help", 0) == "/help"
+        assert completer("/help", 1) is None
+
+    def test_complete_no_match(self):
+        """'/xyz' + Tab returns None immediately."""
+        completer = self._completer()
+        assert completer("/xyz", 0) is None
+
+    def test_no_completion_without_slash(self):
+        """Plain text gets no completions."""
+        completer = self._completer()
+        assert completer("hello", 0) is None
+        assert completer("code", 0) is None
+
+    def test_complete_git_ops(self):
+        """'/git' + Tab completes to '/git-ops'."""
+        completer = self._completer()
+        assert completer("/git", 0) == "/git-ops"
+        assert completer("/git", 1) is None
+
+    def test_complete_agent_command(self):
+        """'/agent' matches both '/agent' and '/agents'."""
+        completer = self._completer()
+        results = []
+        idx = 0
+        while True:
+            result = completer("/agent", idx)
+            if result is None:
+                break
+            results.append(result)
+            idx += 1
+        assert "/agent" in results
+        assert "/agents" in results
