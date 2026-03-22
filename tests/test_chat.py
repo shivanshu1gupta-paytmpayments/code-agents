@@ -14,6 +14,7 @@ from code_agents.chat import (
     _handle_command,
     _make_completer,
     _parse_inline_delegation,
+    _resolve_placeholders,
 )
 
 
@@ -588,3 +589,88 @@ class TestExtractCommands:
 
     def test_empty_text(self):
         assert _extract_commands("") == []
+
+    def test_multiline_curl_with_continuations(self):
+        """Multi-line curl with backslash continuations → single command."""
+        text = '''```bash
+curl -X POST "http://127.0.0.1:8000/redash/run-query" \\
+  -H "Content-Type: application/json" \\
+  -d '{"query": "SELECT * FROM users LIMIT 10"}'
+```'''
+        cmds = _extract_commands(text)
+        assert len(cmds) == 1
+        assert cmds[0].startswith('curl -X POST')
+        assert '-H "Content-Type: application/json"' in cmds[0]
+        assert "-d " in cmds[0]
+
+    def test_mixed_single_and_multiline(self):
+        """Mix of simple commands and multi-line continuations."""
+        text = '''```bash
+curl -s "http://localhost:8000/health"
+curl -X POST "http://localhost:8000/api" \\
+  -H "Authorization: Bearer tok" \\
+  -d '{"key": "value"}'
+echo "done"
+```'''
+        cmds = _extract_commands(text)
+        assert len(cmds) == 3
+        assert cmds[0] == 'curl -s "http://localhost:8000/health"'
+        assert cmds[1].startswith('curl -X POST')
+        assert '-H "Authorization: Bearer tok"' in cmds[1]
+        assert cmds[2] == 'echo "done"'
+
+    def test_continuation_with_comments_between(self):
+        """Comments between commands don't break continuations."""
+        text = '''```bash
+# First command
+git status
+# Second command
+git log \\
+  --oneline \\
+  -5
+```'''
+        cmds = _extract_commands(text)
+        assert cmds == ["git status", "git log --oneline -5"]
+
+
+class TestResolvePlaceholders:
+    """Test placeholder detection and resolution in commands."""
+
+    def test_no_placeholders(self):
+        cmd = 'curl -s "http://localhost:8000/health"'
+        assert _resolve_placeholders(cmd) == cmd
+
+    def test_single_placeholder(self):
+        from unittest.mock import patch
+        cmd = 'curl -s "http://localhost:8000/data-sources/<DATA_SOURCE_ID>/schema"'
+        with patch("builtins.input", return_value="3"):
+            result = _resolve_placeholders(cmd)
+        assert result == 'curl -s "http://localhost:8000/data-sources/3/schema"'
+
+    def test_multiple_placeholders(self):
+        from unittest.mock import patch
+        cmd = 'curl "http://<HOST>:<PORT>/api"'
+        inputs = iter(["localhost", "8000"])
+        with patch("builtins.input", side_effect=inputs):
+            result = _resolve_placeholders(cmd)
+        assert result == 'curl "http://localhost:8000/api"'
+
+    def test_duplicate_placeholder_asked_once(self):
+        from unittest.mock import patch
+        cmd = '<ID> and <ID> again'
+        with patch("builtins.input", return_value="42") as mock_input:
+            result = _resolve_placeholders(cmd)
+        assert result == "42 and 42 again"
+        assert mock_input.call_count == 1  # asked only once
+
+    def test_empty_value_returns_none(self):
+        from unittest.mock import patch
+        cmd = 'curl "http://localhost/<ID>"'
+        with patch("builtins.input", return_value=""):
+            result = _resolve_placeholders(cmd)
+        assert result is None
+
+    def test_lowercase_angle_brackets_not_placeholders(self):
+        """Only <UPPER_CASE> are treated as placeholders."""
+        cmd = 'echo <not_a_placeholder>'
+        assert _resolve_placeholders(cmd) == cmd
