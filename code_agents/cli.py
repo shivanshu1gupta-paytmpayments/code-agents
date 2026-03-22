@@ -248,30 +248,27 @@ def _start_background(repo_path: str):
 
 
 def cmd_start():
-    """Start the server pointing at the current directory."""
+    """Start the server in background pointing at the current directory."""
     _load_env()
-    bold, green, _, _, cyan, dim = _colors()
     cwd = os.getcwd()
 
-    # Check for --background / -bg flag
-    if "--bg" in sys.argv or "--background" in sys.argv:
-        _start_background(cwd)
+    # Foreground mode only if explicitly requested (for debugging)
+    if "--fg" in sys.argv or "--foreground" in sys.argv:
+        bold, green, _, _, cyan, dim = _colors()
+        host = os.getenv("HOST", "0.0.0.0")
+        port = os.getenv("PORT", "8000")
+        print()
+        print(bold(cyan("  Starting Code Agents (foreground)...")))
+        print(dim(f"  Target repo: {cwd}"))
+        print(dim(f"  Server:      http://{host}:{port}"))
+        print(dim(f"  Logs:        {_find_code_agents_home()}/logs/code-agents.log"))
+        print(dim("  Press Ctrl+C to stop"))
+        print()
+        from .main import main as run_server
+        run_server()
         return
 
-    host = os.getenv("HOST", "0.0.0.0")
-    port = os.getenv("PORT", "8000")
-
-    print()
-    print(bold(cyan("  Starting Code Agents (foreground)...")))
-    print(dim(f"  Target repo: {cwd}"))
-    print(dim(f"  Server:      http://{host}:{port}"))
-    print(dim(f"  Logs:        {_find_code_agents_home()}/logs/code-agents.log"))
-    print(dim("  Press Ctrl+C to stop"))
-    print(dim("  Tip: use 'code-agents start --bg' to run in background"))
-    print()
-
-    from .main import main as run_server
-    run_server()
+    _start_background(cwd)
 
 
 def cmd_shutdown():
@@ -867,7 +864,7 @@ def cmd_help():
     print(f"    {cyan('setup'):<14} Full interactive setup wizard")
     print()
     print(bold("  Server:"))
-    print(f"    {cyan('start'):<14} Start the server")
+    print(f"    {cyan('start'):<14} Start the server (background)        {dim('[--fg for foreground]')}")
     print(f"    {cyan('shutdown'):<14} Shutdown the server")
     print(f"    {cyan('status'):<14} Check server health and config")
     print(f"    {cyan('logs'):<14} Tail the log file                    {dim('[lines]')}")
