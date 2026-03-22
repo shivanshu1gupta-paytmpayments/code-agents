@@ -38,6 +38,17 @@ def dim(t: str) -> str: return _w("2", t)
 def magenta(t: str) -> str: return _w("35", t)
 
 
+def _rl_wrap(code: str, t: str) -> str:
+    """Wrap ANSI escape in readline invisible markers (\x01..\x02) for prompts."""
+    if not _USE_COLOR:
+        return t
+    return f"\x01\033[{code}m\x02{t}\x01\033[0m\x02"
+
+
+def _rl_bold(t: str) -> str: return _rl_wrap("1", t)
+def _rl_green(t: str) -> str: return _rl_wrap("32", t)
+
+
 # ---------------------------------------------------------------------------
 # Agent role descriptions (extracted from YAML system prompts)
 # ---------------------------------------------------------------------------
@@ -463,6 +474,7 @@ def chat_main(args: list[str] | None = None):
     # Tab-completion for slash commands and agent names
     _slash_commands = ["/help", "/quit", "/exit", "/agents", "/agent", "/session", "/clear"]
     _completer = _make_completer(_slash_commands, list(agents.keys()))
+    _has_readline = False
 
     try:
         import readline
@@ -473,6 +485,7 @@ def chat_main(args: list[str] | None = None):
             readline.parse_and_bind("bind ^I rl_complete")
         else:
             readline.parse_and_bind("tab: complete")
+        _has_readline = True
     except ImportError:
         pass  # readline not available on some platforms
 
@@ -505,7 +518,7 @@ def chat_main(args: list[str] | None = None):
         try:
             # Read input (supports multi-line with \ continuation)
             lines = []
-            prompt_str = f"  {bold(green('you'))} › "
+            prompt_str = f"  {_rl_bold(_rl_green('you'))} › " if _has_readline else f"  {bold(green('you'))} › "
             while True:
                 line = input(prompt_str if not lines else "  ... ")
                 if line.endswith("\\"):
