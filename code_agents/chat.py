@@ -195,16 +195,33 @@ def _make_completer(
     """
     Build a readline completer for slash commands and agent names.
 
+    Completes:
+    - First token starting with / → slash commands + /agent-name
+    - Second token after '/agent ' → bare agent names
+
     Returns a function suitable for readline.set_completer().
     """
     agent_completions = [f"/{name}" for name in agent_names]
     all_completions = slash_commands + agent_completions
 
     def completer(text: str, idx: int) -> Optional[str]:
-        if not text.startswith("/"):
-            return None
-        matches = [c for c in all_completions if c.startswith(text)]
-        return matches[idx] if idx < len(matches) else None
+        try:
+            import readline
+            line = readline.get_line_buffer().lstrip()
+        except (ImportError, AttributeError):
+            line = text
+
+        # Second word after '/agent ' → complete bare agent names
+        if line.startswith("/agent ") and not text.startswith("/"):
+            matches = [n for n in agent_names if n.startswith(text)]
+            return matches[idx] if idx < len(matches) else None
+
+        # First token starting with /
+        if text.startswith("/"):
+            matches = [c for c in all_completions if c.startswith(text)]
+            return matches[idx] if idx < len(matches) else None
+
+        return None
 
     return completer
 
