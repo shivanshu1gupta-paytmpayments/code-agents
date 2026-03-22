@@ -256,6 +256,104 @@ def _stream_chat(
 
 
 # ---------------------------------------------------------------------------
+# Command extraction and execution
+# ---------------------------------------------------------------------------
+
+import re
+
+_CODE_BLOCK_RE = re.compile(
+    r"```(?:bash|sh|shell|zsh|console)\s*\n(.*?)```",
+    re.DOTALL,
+)
+
+
+def _extract_commands(text: str) -> list[str]:
+    """Extract shell commands from markdown code blocks in agent response."""
+    commands = []
+    for match in _CODE_BLOCK_RE.finditer(text):
+        block = match.group(1).strip()
+        for line in block.splitlines():
+            line = line.strip()
+            # Skip empty lines, comments, and prompt markers
+            if not line or line.startswith("#"):
+                continue
+            # Strip leading $ or > prompt markers
+            if line.startswith("$ "):
+                line = line[2:]
+            elif line.startswith("> "):
+                line = line[2:]
+            if line:
+                commands.append(line)
+    return commands
+
+
+def _offer_run_commands(commands: list[str], cwd: str) -> None:
+    """Offer to run detected shell commands from agent response."""
+    import subprocess
+
+    if not commands:
+        return
+
+    print(f"  {bold(cyan('Commands detected:'))}")
+    for i, cmd in enumerate(commands, 1):
+        print(f"    {bold(str(i) + '.')} {cyan(cmd)}")
+    print()
+
+    for i, cmd in enumerate(commands, 1):
+        try:
+            answer = input(
+                f"  Run {bold(cyan(cmd))}? [y/N/all/skip]: "
+            ).strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            print()
+            return
+
+        if answer == "skip":
+            print(dim("  Skipped remaining commands."))
+            return
+        elif answer == "all":
+            # Run this and all remaining
+            for j, remaining_cmd in enumerate(commands[i - 1:], i):
+                _run_single_command(remaining_cmd, cwd)
+            return
+        elif answer in ("y", "yes"):
+            _run_single_command(cmd, cwd)
+        else:
+            print(dim(f"  Skipped."))
+
+
+def _run_single_command(cmd: str, cwd: str) -> None:
+    """Run a single shell command and display output."""
+    import subprocess
+
+    print(f"  {dim('$')} {bold(cmd)}")
+    try:
+        result = subprocess.run(
+            cmd,
+            shell=True,
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        if result.stdout:
+            for line in result.stdout.splitlines():
+                print(f"    {line}")
+        if result.stderr:
+            for line in result.stderr.splitlines():
+                print(f"    {yellow(line)}")
+        if result.returncode != 0:
+            print(f"    {red(f'Exit code: {result.returncode}')}")
+        else:
+            print(f"    {green('✓ Done')}")
+    except subprocess.TimeoutExpired:
+        print(f"    {red('Timed out (120s)')}")
+    except Exception as e:
+        print(f"    {red(f'Error: {e}')}")
+    print()
+
+
+# ---------------------------------------------------------------------------
 # Slash command handlers
 # ---------------------------------------------------------------------------
 
@@ -329,12 +427,21 @@ def _handle_command(cmd: str, state: dict, url: str) -> Optional[str]:
     if command in ("/quit", "/exit", "/q"):
         return "quit"
 
+    elif command == "/run":
+        # Manual run: /run <command>
+        if not arg:
+            print(yellow("  Usage: /run <shell command>"))
+            return None
+        _run_single_command(arg, state.get("repo_path", "."))
+        return None
+
     elif command == "/help":
         print()
         print(bold("  Chat Commands:"))
         print(f"    {cyan('/quit'):<16} Exit chat")
         print(f"    {cyan('/agent <name>'):<16} Switch to another agent permanently")
         print(f"    {cyan('/agents'):<16} List all available agents")
+        print(f"    {cyan('/run <cmd>'):<16} Run a shell command in the repo directory")
         print(f"    {cyan('/session'):<16} Show current session ID")
         print(f"    {cyan('/clear'):<16} Clear session (fresh start, same agent)")
         print(f"    {cyan('/help'):<16} Show this help")
@@ -344,11 +451,14 @@ def _handle_command(cmd: str, state: dict, url: str) -> Optional[str]:
         print(f"    Send a one-shot prompt to another agent without switching.")
         print(f"    Your current agent stays active after the response.")
         print()
+        print(bold("  Command execution:"))
+        print(f"    When an agent suggests shell commands (in ```bash blocks),")
+        print(f"    you'll be prompted to run them: {cyan('[y/N/all/skip]')}")
+        print()
         print(f"    {dim('Example:')}")
         print(f"    {dim('/code-reviewer Review the auth module for security issues')}")
         print(f"    {dim('/code-writer Add input validation to the login function')}")
-        print(f"    {dim('/code-tester Write unit tests for PaymentService')}")
-        print(f"    {dim('/git-ops Show the last 5 commits')}")
+        print(f"    {dim('/run git status')}")
         print()
 
     elif command == "/agents":
@@ -558,7 +668,7 @@ def chat_main(args: list[str] | None = None):
     }
 
     # Tab-completion for slash commands and agent names
-    _slash_commands = ["/help", "/quit", "/exit", "/agents", "/agent", "/session", "/clear"]
+    _slash_commands = ["/help", "/quit", "/exit", "/agents", "/agent", "/run", "/session", "/clear"]
     _completer = _make_completer(_slash_commands, list(agents.keys()))
     _has_readline = False
 
@@ -656,12 +766,14 @@ def chat_main(args: list[str] | None = None):
                     sys.stdout.flush()
 
                     got_text = False
+                    delegate_response: list[str] = []
                     for piece_type, piece_content in _stream_chat(
                         url, delegate_agent, delegate_messages, None,
                         cwd=state.get("repo_path"),
                     ):
                         if piece_type == "text":
                             got_text = True
+                            delegate_response.append(piece_content)
                             sys.stdout.write(piece_content)
                             sys.stdout.flush()
                         elif piece_type == "reasoning":
@@ -673,6 +785,13 @@ def chat_main(args: list[str] | None = None):
                     if got_text:
                         print()
                     print()
+
+                    # Offer to run detected shell commands
+                    if delegate_response:
+                        cmds = _extract_commands("".join(delegate_response))
+                        if cmds:
+                            _offer_run_commands(cmds, state.get("repo_path", cwd))
+
                     # Back to current agent — no state change
                     current = state["agent"]
                     print(dim(f"  (back to {current})"))
@@ -717,20 +836,20 @@ def chat_main(args: list[str] | None = None):
             sys.stdout.flush()
 
             got_text = False
+            full_response: list[str] = []
             for piece_type, piece_content in _stream_chat(
                 url, current_agent, messages, state.get("session_id"),
                 cwd=state.get("repo_path"),
             ):
                 if piece_type == "text":
                     got_text = True
+                    full_response.append(piece_content)
                     sys.stdout.write(piece_content)
                     sys.stdout.flush()
 
                 elif piece_type == "reasoning":
                     # Show tool activity in dimmed style
-                    # Extract tool name if present
                     if "Using tool:" in piece_content:
-                        # Format: > **Using tool: read_file**
                         sys.stdout.write(f"\n    {dim(piece_content.strip())}")
                     else:
                         sys.stdout.write(f"\n    {dim(piece_content.strip())}")
@@ -745,6 +864,12 @@ def chat_main(args: list[str] | None = None):
             if got_text:
                 print()  # Newline after response
             print()  # Blank line between turns
+
+            # Offer to run detected shell commands
+            if full_response:
+                commands = _extract_commands("".join(full_response))
+                if commands:
+                    _offer_run_commands(commands, state.get("repo_path", cwd))
 
         except KeyboardInterrupt:
             print()
