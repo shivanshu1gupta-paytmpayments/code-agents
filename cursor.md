@@ -39,13 +39,13 @@ code-agents setup                   # full setup wizard
 code-agents version                 # version info
 
 # Dev
-poetry run pytest                   # 47 tests
+poetry run pytest                   # 98 tests
 ```
 
 ## Architecture
 
 - **`cli.py`** — 17 CLI commands (init, start, chat, shutdown, status, doctor, config, logs, branches, diff, test, review, pipeline, agents, curls, setup, version, help)
-- **`chat.py`** — Interactive REPL: agent picker menu, streaming, multi-turn sessions, `/agent` switching
+- **`chat.py`** — Interactive REPL: agent picker menu, streaming, multi-turn sessions, `/agent` switching, auto-detects git repo from cwd, auto-starts server
 - **`setup.py`** — Interactive setup wizard
 - **`app.py`** — FastAPI app, CORS, lifespan, request/response logging
 - **`backend.py`** — Backend abstraction: cursor CLI, cursor HTTP, claude
@@ -55,13 +55,13 @@ poetry run pytest                   # 47 tests
 - **CI/CD routers**: `routers/git_ops.py`, `testing.py`, `jenkins.py`, `argocd.py`, `pipeline.py`
 - **`pipeline_state.py`** — 6-step state machine (connect → review/test → build → deploy → verify → rollback)
 - **`agents/*.yaml`** — 12 agent definitions
-- **`tests/`** — 47 tests
+- **`tests/`** — 98 tests
 
 ## Key Patterns
 
 - **CLI entry**: `pyproject.toml` → `code-agents = "code_agents.cli:main"`
 - **Per-repo .env**: `code-agents init` writes `.env` in cwd. `code-agents start` reads from cwd.
-- **Interactive chat**: `code-agents chat` → numbered menu → REPL with streaming. `/agent` switches. Each agent stays in role.
+- **Interactive chat**: `code-agents chat` → numbered menu → REPL with streaming. `/agent` switches. Each agent stays in role. Auto-detects git repo from cwd. Auto-starts server if not running.
 - **Dynamic `repo_path`**: request param → `TARGET_REPO_PATH` env → `os.getcwd()`
 - **Background server**: `start` launches background process, `shutdown` kills it
 - **Hourly log rotation**: `logs/code-agents.log` = last hour, 168 backups (7 days)
@@ -78,7 +78,7 @@ poetry run pytest                   # 47 tests
 
 ## Testing
 
-47 tests — `poetry run pytest`. Covers: git operations, test framework detection, coverage XML parsing, Jenkins/ArgoCD client init, all routers, pipeline lifecycle, health/diagnostics.
+98 tests — `poetry run pytest`. Covers: chat REPL (slash commands, agent parsing, SSE streaming, repo detection), CLI (all 17 commands, help completeness, config, curls, dispatcher), git operations, test framework detection, coverage XML, Jenkins/ArgoCD client init, all routers, pipeline lifecycle, health/diagnostics.
 
 ## Adding a New Agent
 

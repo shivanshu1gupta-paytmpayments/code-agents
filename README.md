@@ -2,7 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
-[![Tests: 47 passing](https://img.shields.io/badge/tests-47%20passing-brightgreen.svg)]()
+[![Tests: 47 passing](https://img.shields.io/badge/tests-98%20passing-brightgreen.svg)]()
 
 AI-powered code agent platform with interactive chat and a built-in CI/CD pipeline. Define agents in YAML, chat with them from the terminal, and automate: **review → test → build → deploy → verify → rollback**.
 
@@ -48,7 +48,14 @@ $ code-agents chat
   code-tester › I'll create tests for the auth module...
 ```
 
-Each agent stays in its role. Switch anytime with `/agent <name>`. Chat commands: `/help /quit /agents /agent <name> /session /clear`
+**Key features:**
+- **Works on YOUR project** — auto-detects git repo from your current directory and passes it to the agent
+- **Auto-starts server** — if server isn't running, offers to start it for you
+- **Multi-turn sessions** — context is preserved across messages
+- **Streaming** — responses appear in real-time as the agent types
+- **Agent switching** — `/agent code-writer` switches without leaving chat
+
+Chat commands: `/help /quit /agents /agent <name> /session /clear`
 
 ## CLI Commands
 
@@ -154,7 +161,7 @@ Full list: `.env.example`
 ## Testing
 
 ```bash
-poetry run pytest       # 47 tests
+poetry run pytest       # 98 tests
 code-agents doctor      # diagnose setup
 code-agents test        # run tests on target repo
 ```
@@ -209,7 +216,13 @@ code-agents/
       completions.py  agents_list.py  git_ops.py  testing.py
       jenkins.py  argocd.py  pipeline.py  redash.py
       elasticsearch.py  atlassian_oauth_web.py
-  tests/                        # 47 tests
+  tests/                        # 98 tests
+    test_chat.py                #   Chat REPL, slash commands, agent parsing, SSE
+    test_cli.py                 #   CLI commands, help, config, curls, dispatcher
+    test_git_client.py          #   Git operations (real temp repos)
+    test_jenkins_client.py      #   Jenkins + ArgoCD client init
+    test_routers.py             #   All FastAPI routers + pipeline lifecycle
+    test_testing_client.py      #   Test detection, coverage, pipeline state
   scripts/                      # Utility scripts
   initiater/                    # Project audit system (14 rules)
   logs/                         # Hourly-rotated log files

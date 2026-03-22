@@ -1,6 +1,14 @@
 # Agents
 
-Code Agents ships with twelve pre-configured agents in the `agents/` directory. Each is defined as a YAML file and exposed as an OpenAI-compatible endpoint.
+Code Agents ships with **12 pre-configured agents** in the `agents/` directory. Each is defined as a YAML file, exposed as an OpenAI-compatible endpoint, and available in the interactive chat.
+
+**Quickest way to use any agent:**
+```bash
+code-agents chat          # pick from numbered menu
+code-agents chat code-writer   # go straight to a specific agent
+```
+
+The chat auto-detects your git repo from the current directory, so the agent works on **your project's code** — not the code-agents source.
 
 ---
 
@@ -320,7 +328,15 @@ This means clients can reference agents by name, display name, or model ID inter
 
 ## Multi-Turn Sessions
 
-All agents support multi-turn conversations via `session_id`:
+All agents support multi-turn conversations. **The easiest way is via chat** — sessions are managed automatically:
+
+```bash
+code-agents chat code-reasoning
+# Sessions persist automatically between messages.
+# Use /session to see current ID, /clear to start fresh.
+```
+
+**Via API** — pass `session_id` manually:
 
 ```bash
 # First request — get a session_id back
@@ -340,10 +356,38 @@ curl -X POST http://localhost:8000/v1/agents/code-reasoning/chat/completions \
 
 ## Typical Workflow
 
+### Via Interactive Chat (recommended)
+
 ```
-User question
-    │
-    ▼
+$ code-agents chat
+
+  Select an agent:
+    1.  code-reasoning     Analyze code, explain architecture
+    2.  code-writer        Write/modify code, refactor
+    3.  code-reviewer      Review for bugs, security, style
+    4.  code-tester        Write tests, debug issues
+    ...12 agents total
+
+  Pick agent [1-12]: 1
+
+  you › Explain the payment flow
+  code-reasoning › The payment flow starts at...
+
+  you › /agent code-tester
+  ✓ Switched to: code-tester
+
+  you › Write tests for PaymentService
+  code-tester › Creating tests...
+```
+
+Chat commands: `/help /quit /agent <name> /agents /session /clear`
+
+The agent automatically works on **your current project** (detects git repo from cwd).
+If the server isn't running, chat offers to start it for you.
+
+### Via API / Open WebUI
+
+```
 Agent Router  ──→  clarifies task
     │
     ├──→  Code Reasoning        (understand)
@@ -359,9 +403,7 @@ Agent Router  ──→  clarifies task
     └──→  Pipeline Orchestrator  (full CI/CD pipeline)
 ```
 
-Use the router for triage, or call specialist agents directly if you already know what you need.
-
-**Fastest way to interact:** `code-agents chat` — pick an agent from the numbered menu, start chatting. Switch anytime with `/agent <name>`.
+Use `code-agents curls <agent-name>` to get copy-pasteable curl commands for any agent.
 
 ---
 
@@ -372,8 +414,22 @@ When you add a new agent, workflow, or integration to the project:
 1. Add the agent YAML to `agents/`
 2. Document it in this file (`Agents.md`) following the format above
 3. Add role description to `AGENT_ROLES` dict in `code_agents/chat.py`
-4. **Update `README.md`** — agents table, project structure
-5. **Update `CLAUDE.md`** and `cursor.md` — architecture section
-6. **Update `agents/agent_router.yaml`** — add to specialists list in system prompt
+4. Add example prompts to `_AGENT_EXAMPLES` dict in `code_agents/cli.py` (for `code-agents curls <agent>`)
+5. **Update `agents/agent_router.yaml`** — add to specialists list in system prompt
+6. **Update `README.md`** — agents table, project structure
+7. **Update `CLAUDE.md`** and `cursor.md` — architecture section
+8. **Add tests** in `tests/` for any new functionality
 
 Run `poetry run python initiater/run_audit.py --rules workflow` to verify sync.
+Run `poetry run pytest` to verify all 98 tests pass.
+
+### Key files that reference agent lists
+- `agents/agent_router.yaml` — system prompt lists all specialists
+- `code_agents/chat.py` — `AGENT_ROLES` dict (roles shown in chat)
+- `code_agents/cli.py` — `_AGENT_EXAMPLES` dict (example curls per agent), help text
+- `README.md` — agents table
+- `Agents.md` — this file
+- `CLAUDE.md` / `cursor.md` — architecture sections
+
+### Copyright
+Copyright (c) 2026 Paytm Payments Services Limited (Regulated by RBI)
