@@ -166,14 +166,8 @@ async def run_agent(
             )
 
     if agent.backend == "claude":
-        try:
-            from claude_agent_sdk import query as sdk_query
-            from claude_agent_sdk import ClaudeAgentOptions as OptionsClass
-        except ImportError:
-            raise RuntimeError(
-                "claude-agent-sdk is not installed. "
-                "Install it with: pip install -e '.[claude]'"
-            )
+        from claude_agent_sdk import query as sdk_query
+        from claude_agent_sdk import ClaudeAgentOptions as OptionsClass
         env_key = "ANTHROPIC_API_KEY"
     else:
         try:

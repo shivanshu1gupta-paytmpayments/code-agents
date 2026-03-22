@@ -788,16 +788,13 @@ def cmd_doctor():
         else:
             print(dim("  · cursor-agent-sdk not installed"))
 
-    # claude-agent-sdk
+    # claude-agent-sdk (core dependency)
     try:
         import claude_agent_sdk
         print(green("  ✓ claude-agent-sdk installed"))
     except ImportError:
-        if anthropic_key:
-            print(yellow("  ! claude-agent-sdk not installed (needed for Claude backend)"))
-            warnings += 1
-        else:
-            print(dim("  · claude-agent-sdk not installed"))
+        print(red("  ✗ claude-agent-sdk not installed — run: poetry install"))
+        issues += 1
 
     # ── Server ──
     print()
