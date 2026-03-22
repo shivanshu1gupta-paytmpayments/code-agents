@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+from pathlib import Path
 from typing import Optional
 
 # ---------------------------------------------------------------------------
@@ -291,18 +292,60 @@ def chat_main(args: list[str] | None = None):
 
     url = _server_url()
 
-    # Check server
+    # Check server — offer to start if not running
     if not _check_server(url):
         print()
-        print(red(f"  Server is not running at {url}"))
-        print(f"  Start it first: {bold('code-agents start')}")
+        print(yellow(f"  Server is not running at {url}"))
         print()
-        return
+        try:
+            answer = input(f"  Start the server now? [Y/n]: ").strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            print()
+            return
+        if answer in ("", "y", "yes"):
+            print(dim("  Starting server in background..."))
+            # Import and start background
+            import subprocess as _sp
+            import time as _time
+            code_agents_home = str(Path(__file__).resolve().parent.parent)
+            env = os.environ.copy()
+            env["TARGET_REPO_PATH"] = cwd
+            log_dir = Path(code_agents_home) / "logs"
+            log_dir.mkdir(exist_ok=True)
+            log_file = log_dir / "code-agents.log"
+            _sp.Popen(
+                [sys.executable, "-m", "code_agents.main"],
+                cwd=code_agents_home,
+                env=env,
+                stdout=_sp.DEVNULL,
+                stderr=open(str(log_file), "a"),
+            )
+            # Wait for server to be ready
+            for _ in range(10):
+                _time.sleep(1)
+                if _check_server(url):
+                    print(green(f"  ✓ Server started at {url}"))
+                    break
+            else:
+                print(red(f"  ✗ Server failed to start. Check: code-agents logs"))
+                return
+        else:
+            print(f"  Start it with: {bold('code-agents start')}")
+            return
+        print()
 
     # Fetch agents from server
     agents = _get_agents(url)
     if not agents:
-        print(red("  No agents loaded. Check server logs."))
+        print()
+        print(red("  No agents loaded from server."))
+        print(f"  Server is running at {url} but returned no agents.")
+        print()
+        print(bold("  Troubleshoot:"))
+        print(f"    code-agents doctor                  {dim('# diagnose issues')}")
+        print(f"    code-agents logs                    {dim('# check server logs')}")
+        print(f"    curl -s {url}/v1/agents | python3 -m json.tool")
+        print()
         return
 
     # Determine agent: from args or interactive selection
