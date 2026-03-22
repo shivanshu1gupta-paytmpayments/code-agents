@@ -108,7 +108,7 @@ These files must stay in sync. When you change one, check the others:
 # Install dev dependencies
 poetry install --with dev
 
-# Run tests (must be 114+ passing)
+# Run tests (must be 117+ passing)
 poetry run pytest
 
 # Check project quality

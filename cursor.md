@@ -39,7 +39,7 @@ code-agents setup                   # full setup wizard
 code-agents version                 # version info
 
 # Dev
-poetry run pytest                   # 114 tests
+poetry run pytest                   # 117 tests
 ```
 
 ## Architecture
@@ -55,7 +55,7 @@ poetry run pytest                   # 114 tests
 - **CI/CD routers**: `routers/git_ops.py`, `testing.py`, `jenkins.py`, `argocd.py`, `pipeline.py`
 - **`pipeline_state.py`** — 6-step state machine (connect → review/test → build → deploy → verify → rollback)
 - **`agents/*.yaml`** — 12 agent definitions
-- **`tests/`** — 114 tests
+- **`tests/`** — 117 tests
 
 ## Key Patterns
 
@@ -78,7 +78,7 @@ poetry run pytest                   # 114 tests
 
 ## Testing
 
-114 tests — `poetry run pytest`. Covers: chat REPL (slash commands, agent parsing, SSE streaming, repo detection, inline delegation, tab-completion), CLI (all 17 commands, help completeness, config, curls, dispatcher), git operations, test framework detection, coverage XML, Jenkins/ArgoCD client init, all routers, pipeline lifecycle, health/diagnostics.
+117 tests — `poetry run pytest`. Covers: chat REPL (slash commands, agent parsing, SSE streaming, repo detection, inline delegation, tab-completion), CLI (all 17 commands, help completeness, config, curls, dispatcher), git operations, test framework detection, coverage XML, Jenkins/ArgoCD client init, all routers, pipeline lifecycle, health/diagnostics.
 
 ## Adding a New Agent
 
