@@ -710,13 +710,14 @@ def cmd_diff(args: list[str]):
     base = args[0] if len(args) > 0 else "main"
     head = args[1] if len(args) > 1 else "HEAD"
 
-    data = _api_get(f"/git/diff?base={base}&head={head}")
+    cwd = os.getcwd()
+    data = _api_get(f"/git/diff?base={base}&head={head}&repo_path={cwd}")
     if not data:
         # Fallback: run git directly
         print(dim(f"  Server not running — using git directly"))
         import asyncio
         from .git_client import GitClient
-        client = GitClient(os.getcwd())
+        client = GitClient(cwd)
         try:
             data = asyncio.run(client.diff(base, head))
         except Exception as e:
@@ -741,12 +742,13 @@ def cmd_branches():
     """List git branches."""
     bold, green, yellow, red, cyan, dim = _colors()
     _load_env()
+    cwd = os.getcwd()
 
-    data = _api_get("/git/branches")
+    data = _api_get(f"/git/branches?repo_path={cwd}")
     if not data:
         import asyncio
         from .git_client import GitClient
-        client = GitClient(os.getcwd())
+        client = GitClient(cwd)
         try:
             branches = asyncio.run(client.list_branches())
             data = {"branches": branches}
@@ -756,13 +758,13 @@ def cmd_branches():
 
     # Get current branch
     current = None
-    cur_data = _api_get("/git/current-branch")
+    cur_data = _api_get(f"/git/current-branch?repo_path={cwd}")
     if cur_data:
         current = cur_data.get("branch")
     else:
         import asyncio
         from .git_client import GitClient
-        client = GitClient(os.getcwd())
+        client = GitClient(cwd)
         try:
             current = asyncio.run(client.current_branch())
         except Exception:
@@ -782,12 +784,13 @@ def cmd_test(args: list[str]):
     bold, green, yellow, red, cyan, dim = _colors()
     _load_env()
 
+    cwd = os.getcwd()
     branch = args[0] if args else None
-    body: dict = {}
+    body: dict = {"repo_path": cwd}
     if branch:
         body["branch"] = branch
 
-    print(bold("  Running tests..."))
+    print(bold(f"  Running tests in {os.path.basename(cwd)}..."))
     print()
 
     data = _api_post("/testing/run", body)
@@ -795,7 +798,7 @@ def cmd_test(args: list[str]):
         # Fallback: run directly
         import asyncio
         from .testing_client import TestingClient
-        client = TestingClient(os.getcwd())
+        client = TestingClient(cwd)
         try:
             data = asyncio.run(client.run_tests(branch=branch))
         except Exception as e:
@@ -841,13 +844,20 @@ def cmd_review(args: list[str]):
         print(f"  +{diff_data.get('insertions', 0)} / -{diff_data.get('deletions', 0)}")
         print()
 
-    # Send to code-reviewer agent
+    # Send to code-reviewer agent with repo context
+    cwd = os.getcwd()
+    repo_name = os.path.basename(cwd)
     diff_text = diff_data.get("diff", "") if diff_data else ""
-    prompt = f"Review this code diff between {base} and {head}. Identify bugs, security issues, and improvements:\n\n{diff_text[:10000]}"
+    prompt = (
+        f"You are reviewing code in the project: {repo_name} (at {cwd}).\n"
+        f"Review this code diff between {base} and {head}. "
+        f"Identify bugs, security issues, and improvements:\n\n{diff_text[:10000]}"
+    )
 
     body = {
         "messages": [{"role": "user", "content": prompt}],
         "stream": False,
+        "cwd": cwd,
     }
     print(dim("  Sending to code-reviewer agent..."))
     result = _api_post("/v1/agents/code-reviewer/chat/completions", body)

@@ -461,8 +461,23 @@ def chat_main(args: list[str] | None = None):
                     break
                 continue
 
-            # Build messages
-            messages = [{"role": "user", "content": user_input}]
+            # Build messages — inject repo context so the agent knows which project to work on
+            repo = state.get("repo_path", cwd)
+            repo_name = os.path.basename(repo)
+            system_context = (
+                f"IMPORTANT: You are working on the project at: {repo}\n"
+                f"Project name: {repo_name}\n"
+                f"This is the user's repository — all your analysis, code reading, "
+                f"file operations, and responses must be about THIS project's files. "
+                f"Do NOT describe the code-agents tool itself. "
+                f"The user's current working directory is: {repo}\n"
+                f"When reading files, searching code, or explaining architecture — "
+                f"always operate within {repo}."
+            )
+            messages = [
+                {"role": "system", "content": system_context},
+                {"role": "user", "content": user_input},
+            ]
 
             # Stream response
             current_agent = state["agent"]
