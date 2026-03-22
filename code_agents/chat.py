@@ -268,23 +268,93 @@ _CODE_BLOCK_RE = re.compile(
 
 
 def _extract_commands(text: str) -> list[str]:
-    """Extract shell commands from markdown code blocks in agent response."""
+    """Extract shell commands from markdown code blocks in agent response.
+
+    Handles multi-line commands joined with backslash continuations, e.g.:
+        curl -X POST "http://..." \
+          -H "Content-Type: application/json" \
+          -d '{"query": "SELECT ..."}'
+    """
     commands = []
     for match in _CODE_BLOCK_RE.finditer(text):
         block = match.group(1).strip()
-        for line in block.splitlines():
-            line = line.strip()
-            # Skip empty lines, comments, and prompt markers
-            if not line or line.startswith("#"):
+        # Join backslash-continued lines first
+        lines = block.splitlines()
+        joined_lines: list[str] = []
+        current = ""
+        for line in lines:
+            stripped = line.strip()
+            if not stripped or stripped.startswith("#"):
+                # Flush any accumulated continuation before skipping
+                if current:
+                    joined_lines.append(current)
+                    current = ""
                 continue
-            # Strip leading $ or > prompt markers
-            if line.startswith("$ "):
-                line = line[2:]
-            elif line.startswith("> "):
-                line = line[2:]
-            if line:
-                commands.append(line)
+            if current:
+                # Continuing from previous line
+                current += " " + stripped
+            else:
+                # Strip leading $ or > prompt markers
+                if stripped.startswith("$ "):
+                    stripped = stripped[2:]
+                elif stripped.startswith("> "):
+                    stripped = stripped[2:]
+                current = stripped
+
+            # Check if this line continues (ends with \)
+            if current.endswith("\\"):
+                current = current[:-1].rstrip()  # remove trailing \ and whitespace
+            else:
+                joined_lines.append(current)
+                current = ""
+
+        # Flush any remaining
+        if current:
+            joined_lines.append(current)
+
+        for cmd in joined_lines:
+            if cmd:
+                commands.append(cmd)
     return commands
+
+
+_PLACEHOLDER_RE = re.compile(r"<([A-Z][A-Z0-9_]+)>")
+
+
+def _resolve_placeholders(cmd: str) -> Optional[str]:
+    """
+    Detect <PLACEHOLDER> tokens in a command and prompt user to fill them.
+    Returns the resolved command, or None if user cancels.
+    """
+    placeholders = _PLACEHOLDER_RE.findall(cmd)
+    if not placeholders:
+        return cmd
+
+    # Deduplicate while preserving order
+    seen = set()
+    unique = []
+    for p in placeholders:
+        if p not in seen:
+            seen.add(p)
+            unique.append(p)
+
+    print(f"    {yellow('Placeholders detected — fill in values:')}")
+    replacements = {}
+    for ph in unique:
+        try:
+            value = input(f"    {bold(f'<{ph}>')}: ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print()
+            return None
+        if not value:
+            print(dim(f"    Skipped (no value for <{ph}>)."))
+            return None
+        replacements[ph] = value
+
+    for ph, value in replacements.items():
+        cmd = cmd.replace(f"<{ph}>", value)
+
+    return cmd
 
 
 def _offer_run_commands(commands: list[str], cwd: str) -> None:
@@ -312,21 +382,40 @@ def _offer_run_commands(commands: list[str], cwd: str) -> None:
             print(dim("  Skipped remaining commands."))
             return
         elif answer == "all":
-            # Run this and all remaining
-            for j, remaining_cmd in enumerate(commands[i - 1:], i):
-                _run_single_command(remaining_cmd, cwd)
+            for remaining_cmd in commands[i - 1:]:
+                resolved = _resolve_placeholders(remaining_cmd)
+                if resolved:
+                    _run_single_command(resolved, cwd)
             return
         elif answer in ("y", "yes"):
-            _run_single_command(cmd, cwd)
+            resolved = _resolve_placeholders(cmd)
+            if resolved:
+                _run_single_command(resolved, cwd)
         else:
             print(dim(f"  Skipped."))
 
 
 def _run_single_command(cmd: str, cwd: str) -> None:
-    """Run a single shell command and display output."""
+    """Run a single shell command and display output in a red bordered block."""
     import subprocess
+    import shutil
 
-    print(f"  {dim('$')} {bold(cmd)}")
+    term_width = shutil.get_terminal_size((80, 24)).columns
+    box_width = min(term_width - 4, 100)  # leave margin, cap at 100
+    inner_width = box_width - 2  # inside the border
+
+    def _box_line(text: str) -> str:
+        """Format a line inside the red box."""
+        # Truncate if too long (account for ANSI codes in display)
+        visible = text[:inner_width]
+        pad = max(0, inner_width - len(visible))
+        return red(f"  │") + f" {visible}{' ' * pad}" + red("│")
+
+    # Top border + command
+    print(red(f"  ┌{'─' * box_width}┐"))
+    print(red(f"  │") + f" {bold('$')} {cyan(cmd[:inner_width - 4])}" + " " * max(0, inner_width - len(cmd) - 3) + red("│"))
+    print(red(f"  ├{'─' * box_width}┤"))
+
     try:
         result = subprocess.run(
             cmd,
@@ -336,20 +425,43 @@ def _run_single_command(cmd: str, cwd: str) -> None:
             text=True,
             timeout=120,
         )
+        output_lines = []
         if result.stdout:
-            for line in result.stdout.splitlines():
-                print(f"    {line}")
+            # Pretty-print JSON if the output is valid JSON
+            stdout = result.stdout
+            try:
+                import json as _json
+                parsed = _json.loads(stdout)
+                stdout = _json.dumps(parsed, indent=2, ensure_ascii=False)
+            except (ValueError, TypeError):
+                pass
+            output_lines.extend(stdout.splitlines())
         if result.stderr:
-            for line in result.stderr.splitlines():
-                print(f"    {yellow(line)}")
+            output_lines.extend(result.stderr.splitlines())
+
+        if output_lines:
+            for line in output_lines[:50]:  # cap at 50 lines
+                print(_box_line(line))
+            if len(output_lines) > 50:
+                print(_box_line(f"... ({len(output_lines) - 50} more lines)"))
+
+        # Status line
         if result.returncode != 0:
-            print(f"    {red(f'Exit code: {result.returncode}')}")
+            status = red(f"  │ ✗ Exit code: {result.returncode}")
+            pad = max(0, inner_width - len(f" ✗ Exit code: {result.returncode}"))
+            print(status + " " * pad + red("│"))
         else:
-            print(f"    {green('✓ Done')}")
+            status_text = " ✓ Done"
+            pad = max(0, inner_width - len(status_text))
+            print(red("  │") + green(status_text) + " " * pad + red("│"))
+
     except subprocess.TimeoutExpired:
-        print(f"    {red('Timed out (120s)')}")
+        print(_box_line(red("Timed out (120s)")))
     except Exception as e:
-        print(f"    {red(f'Error: {e}')}")
+        print(_box_line(red(f"Error: {e}")))
+
+    # Bottom border
+    print(red(f"  └{'─' * box_width}┘"))
     print()
 
 
