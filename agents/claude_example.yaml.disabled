@@ -2,9 +2,10 @@
 #
 # To enable this agent:
 #   1. Rename this file to claude_example.yaml
-#   2. Install the claude backend: poetry install --with claude
-#   3. Set ANTHROPIC_API_KEY in your environment
-#   4. Restart the server
+#   2. Set ANTHROPIC_API_KEY in your environment (or run: code-agents init)
+#   3. Restart the server
+#
+# claude-agent-sdk is installed by default — no extra steps needed.
 
 name: claude-coder
 display_name: "Claude Coder (Example)"
