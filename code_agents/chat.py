@@ -99,7 +99,13 @@ def _get_agents(url: str) -> dict[str, str]:
         return {}
 
 
-def _stream_chat(url: str, agent: str, messages: list[dict], session_id: Optional[str] = None):
+def _stream_chat(
+    url: str,
+    agent: str,
+    messages: list[dict],
+    session_id: Optional[str] = None,
+    cwd: Optional[str] = None,
+):
     """
     Send a chat request with streaming and yield response pieces.
 
@@ -115,6 +121,8 @@ def _stream_chat(url: str, agent: str, messages: list[dict], session_id: Optiona
     }
     if session_id:
         body["session_id"] = session_id
+    if cwd:
+        body["cwd"] = cwd
 
     endpoint = f"{url}/v1/agents/{agent}/chat/completions"
 
@@ -380,10 +388,25 @@ def chat_main(args: list[str] | None = None):
             print(dim("  Cancelled."))
             return
 
+    # Detect repository — find the git root from cwd
+    repo_path = cwd
+    is_repo = False
+    check_dir = cwd
+    while True:
+        if os.path.isdir(os.path.join(check_dir, ".git")):
+            repo_path = check_dir
+            is_repo = True
+            break
+        parent = os.path.dirname(check_dir)
+        if parent == check_dir:
+            break  # reached filesystem root
+        check_dir = parent
+
     # State
     state = {
         "agent": agent_name,
         "session_id": None,
+        "repo_path": repo_path,
     }
 
     # Banner
@@ -397,7 +420,14 @@ def chat_main(args: list[str] | None = None):
     print()
     print(f"  Agent:   {bold(agent_name)} ({display_name})")
     print(f"  Role:    {dim(role)}")
-    print(f"  Repo:    {cyan(cwd)}")
+    if is_repo:
+        # Show repo name prominently
+        repo_name = os.path.basename(repo_path)
+        print(f"  Repo:    {bold(cyan(repo_name))} ({repo_path})")
+        print(f"           {dim('Agent will work on this project')}")
+    else:
+        print(f"  Dir:     {yellow(cwd)}")
+        print(f"           {yellow('No git repo detected — agent has no project context')}")
     print(f"  Server:  {dim(url)}")
     print()
     print(dim("  Commands: /help /quit /agents /agent <name> /session /clear"))
@@ -442,7 +472,8 @@ def chat_main(args: list[str] | None = None):
 
             got_text = False
             for piece_type, piece_content in _stream_chat(
-                url, current_agent, messages, state.get("session_id")
+                url, current_agent, messages, state.get("session_id"),
+                cwd=state.get("repo_path"),
             ):
                 if piece_type == "text":
                     got_text = True
