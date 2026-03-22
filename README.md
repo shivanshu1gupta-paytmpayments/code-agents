@@ -208,7 +208,7 @@ code-agents/
     app.py                      #   FastAPI app, middleware, logging
     config.py                   #   Settings + AgentLoader
     env_loader.py               #   Centralized env loading (global + per-repo)
-    backend.py                  #   Backend abstraction (cursor/claude)
+    backend.py                  #   Backend abstraction (cursor/claude, claude-agent-sdk built-in)
     stream.py                   #   SSE streaming + response builders
     models.py                   #   Pydantic request/response models
     logging_config.py           #   Hourly rotating file + console logging

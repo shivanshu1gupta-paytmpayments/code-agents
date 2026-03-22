@@ -327,9 +327,11 @@ extra_args:                             # Optional: backend-specific arguments
 
 A disabled example is included at `agents/claude_example.yaml.disabled`. To use the Claude backend:
 
-1. Install Claude dependencies: `poetry install --with claude`
-2. Set `ANTHROPIC_API_KEY`
-3. Create an agent YAML with `backend: claude` and a Claude model (e.g., `sonnet`)
+1. Set `ANTHROPIC_API_KEY` (via `code-agents init` or in `~/.code-agents/config.env`)
+2. Rename the example: `mv agents/claude_example.yaml.disabled agents/claude_example.yaml`
+3. Restart the server
+
+`claude-agent-sdk` is a core dependency — no extra install step needed.
 
 ---
 

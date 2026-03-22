@@ -159,13 +159,13 @@ fi
 step "4/5" "Installing dependencies..."
 
 cd "$CODE_AGENTS_DIR"
-dim "poetry install..."
+dim "poetry install (includes claude-agent-sdk)..."
 poetry install --quiet 2>&1 | tail -5
-info "Core dependencies installed"
+info "Core dependencies installed (includes claude-agent-sdk)"
 
-# cursor-agent-sdk (optional)
+# cursor-agent-sdk (optional — for Cursor backend)
 if ! poetry run python -c "import cursor_agent_sdk" 2>/dev/null; then
-    dim "Installing cursor-agent-sdk..."
+    dim "Installing cursor-agent-sdk (Cursor backend)..."
     poetry install --with cursor --quiet 2>&1 | tail -3
 fi
 info "cursor-agent-sdk ready"

@@ -73,7 +73,7 @@ poetry run python initiater/run_audit.py
 - **Background server**: `code-agents start` launches in background, shows URLs + curl commands. `code-agents shutdown` kills it.
 - **Agent names**: kebab-case in URLs (`code-reasoning`), snake_case in filenames (`code_reasoning.yaml`).
 - **`${VAR}` expansion** in YAML `api_key` and `system_prompt` fields.
-- **Backends**: `"cursor"` (default) or `"claude"`. Each agent picks independently.
+- **Backends**: `"cursor"` (default) or `"claude"`. Each agent picks independently. `claude-agent-sdk` is a core dependency; `cursor-agent-sdk` is optional.
 - **Permission modes**: `default` (ask), `acceptEdits` (auto-approve), `bypassPermissions` (read-only).
 - **Hourly log rotation**: `logs/code-agents.log` = last hour, 168 backups (7 days).
 

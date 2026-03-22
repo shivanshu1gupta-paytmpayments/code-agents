@@ -16,18 +16,13 @@ pyyaml = ">=6.0"
 requests = ">=2.28"
 httpx = ">=0.24"
 elasticsearch = ">=8,<9"
+claude-agent-sdk = ">=0.1"
 
 [tool.poetry.group.cursor]
 optional = true
 
 [tool.poetry.group.cursor.dependencies]
 cursor-agent-sdk = {git = "https://github.com/gitcnd/cursor-agent-sdk-python.git"}
-
-[tool.poetry.group.claude]
-optional = true
-
-[tool.poetry.group.claude.dependencies]
-claude-agent-sdk = ">=0.1"
 
 [tool.poetry.group.dev]
 optional = true
