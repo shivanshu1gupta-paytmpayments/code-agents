@@ -192,11 +192,16 @@ async def run_agent(
     if api_key:
         env[env_key] = api_key
 
+    # Inject --trust so cursor-agent doesn't prompt for workspace trust
+    extra = dict(agent.extra_args or {})
+    if agent.backend != "claude":
+        extra.setdefault("trust", None)  # None = bare flag (--trust)
+
     options = OptionsClass(
         model=model,
         cwd=cwd,
         permission_mode=agent.permission_mode,
-        extra_args=agent.extra_args,
+        extra_args=extra,
         resume=session_id,
         system_prompt=agent.system_prompt or None,
         env=env,
