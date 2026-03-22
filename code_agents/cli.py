@@ -25,16 +25,29 @@ def _find_code_agents_home() -> Path:
     return Path(__file__).resolve().parent.parent
 
 
+def _user_cwd() -> str:
+    """Get the user's REAL working directory.
+
+    When run via the wrapper script (~/.local/bin/code-agents),
+    the wrapper does 'cd ~/.code-agents' before invoking poetry,
+    so os.getcwd() returns ~/.code-agents — not the user's repo.
+
+    The wrapper sets CODE_AGENTS_USER_CWD to the original directory.
+    """
+    return os.environ.get("CODE_AGENTS_USER_CWD") or os.getcwd()
+
+
 def _load_env():
-    """Load .env from cwd if it exists."""
-    env_file = os.path.join(os.getcwd(), ".env")
+    """Load .env from the user's real cwd if it exists."""
+    cwd = _user_cwd()
+    env_file = os.path.join(cwd, ".env")
     if os.path.exists(env_file):
         try:
             from dotenv import load_dotenv
             load_dotenv(env_file, override=True)
         except ImportError:
             pass
-    os.environ.setdefault("TARGET_REPO_PATH", os.getcwd())
+    os.environ.setdefault("TARGET_REPO_PATH", cwd)
 
 
 def _colors():
@@ -86,7 +99,7 @@ def cmd_init():
     )
     bold, green, yellow, red, cyan, dim = _colors()
 
-    cwd = os.getcwd()
+    cwd = _user_cwd()
     code_agents_home = _find_code_agents_home()
 
     print()
@@ -133,7 +146,7 @@ def cmd_init():
     env_vars = {k: v for k, v in env_vars.items() if v}
 
     print(bold("━" * 44))
-    original_dir = os.getcwd()
+    original_dir = _user_cwd()
     os.chdir(cwd)
     write_env_file(env_vars)
     os.chdir(original_dir)
@@ -250,7 +263,7 @@ def _start_background(repo_path: str):
 def cmd_start():
     """Start the server in background pointing at the current directory."""
     _load_env()
-    cwd = os.getcwd()
+    cwd = _user_cwd()
 
     # Foreground mode only if explicitly requested (for debugging)
     if "--fg" in sys.argv or "--foreground" in sys.argv:
@@ -328,7 +341,7 @@ def cmd_status():
         print(dim(f"    Start with: code-agents start"))
         print()
         # Still show local config
-        cwd = os.getcwd()
+        cwd = _user_cwd()
         env_file = os.path.join(cwd, ".env")
         print(f"  Repo:     {cyan(cwd)}")
         print(f"  .env:     {'exists' if os.path.exists(env_file) else red('not found — run: code-agents init')}")
@@ -342,7 +355,7 @@ def cmd_status():
         print(f"  URL:      {cyan(url)}")
         print(f"  Version:  {diag.get('package_version', '?')}")
         print(f"  Agents:   {len(diag.get('agents', []))}")
-        print(f"  Repo:     {cyan(os.getenv('TARGET_REPO_PATH', os.getcwd()))}")
+        print(f"  Repo:     {cyan(os.getenv('TARGET_REPO_PATH', _user_cwd()))}")
         print()
         print(bold("  Integrations:"))
         print(f"    Jenkins:       {'✓ configured' if diag.get('jenkins_configured') else '✗ not configured'}")
@@ -421,7 +434,7 @@ def cmd_config():
     bold, green, yellow, red, cyan, dim = _colors()
     _load_env()
 
-    cwd = os.getcwd()
+    cwd = _user_cwd()
     env_file = os.path.join(cwd, ".env")
 
     print()
@@ -470,7 +483,7 @@ def cmd_doctor():
     """Diagnose common issues — comprehensive health check."""
     bold, green, yellow, red, cyan, dim = _colors()
     _load_env()
-    cwd = os.getcwd()
+    cwd = _user_cwd()
     issues = 0
     warnings = 0
 
@@ -710,7 +723,7 @@ def cmd_diff(args: list[str]):
     base = args[0] if len(args) > 0 else "main"
     head = args[1] if len(args) > 1 else "HEAD"
 
-    cwd = os.getcwd()
+    cwd = _user_cwd()
     data = _api_get(f"/git/diff?base={base}&head={head}&repo_path={cwd}")
     if not data:
         # Fallback: run git directly
@@ -742,7 +755,7 @@ def cmd_branches():
     """List git branches."""
     bold, green, yellow, red, cyan, dim = _colors()
     _load_env()
-    cwd = os.getcwd()
+    cwd = _user_cwd()
 
     data = _api_get(f"/git/branches?repo_path={cwd}")
     if not data:
@@ -784,7 +797,7 @@ def cmd_test(args: list[str]):
     bold, green, yellow, red, cyan, dim = _colors()
     _load_env()
 
-    cwd = os.getcwd()
+    cwd = _user_cwd()
     branch = args[0] if args else None
     body: dict = {"repo_path": cwd}
     if branch:
@@ -845,7 +858,7 @@ def cmd_review(args: list[str]):
         print()
 
     # Send to code-reviewer agent with repo context
-    cwd = os.getcwd()
+    cwd = _user_cwd()
     repo_name = os.path.basename(cwd)
     diff_text = diff_data.get("diff", "") if diff_data else ""
     prompt = (
