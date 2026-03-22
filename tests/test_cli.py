@@ -80,11 +80,11 @@ class TestCmdHelp:
         cmd_help()
         output = capsys.readouterr().out
 
-        # All 19 commands should appear
+        # All 20 commands should appear
         commands = [
-            "init", "migrate", "rules", "start", "chat", "setup", "shutdown", "status",
-            "logs", "config", "doctor", "branches", "diff", "test",
-            "review", "pipeline", "agents", "curls", "version", "help",
+            "init", "migrate", "rules", "start", "restart", "chat", "setup",
+            "shutdown", "status", "logs", "config", "doctor", "branches", "diff",
+            "test", "review", "pipeline", "agents", "curls", "version", "help",
         ]
         for cmd in commands:
             assert cmd in output, f"Command '{cmd}' missing from help"
