@@ -61,8 +61,10 @@ $ code-agents chat
 - **Agent switching** — `/agent code-writer` switches permanently
 - **Inline delegation** — `/<agent> <prompt>` sends a one-shot to another agent, then returns to your current agent
 - **Tab-completion** — press Tab after `/` to autocomplete slash commands and agent names
+- **Command execution** — agent suggests a shell command? Press `y` to run it right from chat, with JSON pretty-printing
+- **Agent rules** — persistent instructions per-agent or global, auto-refresh mid-chat
 
-Chat commands: `/help /quit /agents /agent <name> /session /clear /<agent> <prompt>`
+Chat commands: `/help /quit /agents /agent <name> /rules /run <cmd> /session /clear /<agent> <prompt>`
 
 ## CLI Commands
 
@@ -111,6 +113,58 @@ code-agents help                         # full help with all args
 | `curls` | `[category\|agent]` | Show API curl commands. Filter by category or agent |
 | `version` | | Version, Python, install path |
 | `help` | | Full help with all args and examples |
+| `rules` | `[list\|create\|edit\|delete]` | Manage agent rules (see below) |
+| `migrate` | | Migrate legacy .env to centralized config |
+
+## Agent Rules
+
+Persistent instructions that get injected into agent system prompts. Rules auto-refresh — edit a file mid-chat and the next message picks it up.
+
+### Two tiers
+
+| Tier | Location | Scope |
+|------|----------|-------|
+| Global | `~/.code-agents/rules/` | All projects |
+| Project | `{repo}/.code-agents/rules/` | This project only |
+
+### Targeting
+
+| File name | Applies to |
+|-----------|-----------|
+| `_global.md` | All agents |
+| `code-writer.md` | Only the `code-writer` agent |
+| `code-reviewer.md` | Only the `code-reviewer` agent |
+
+### Usage
+
+```bash
+# Create rules
+code-agents rules create                      # project rule → all agents
+code-agents rules create --agent code-writer  # project rule → code-writer only
+code-agents rules create --global             # global rule → all agents, all projects
+
+# List active rules
+code-agents rules                             # list all
+code-agents rules list --agent code-writer    # list for specific agent
+
+# Edit / delete
+code-agents rules edit <path>                 # open in $EDITOR
+code-agents rules delete <path>               # delete with confirmation
+```
+
+In chat: `/rules` shows active rules for the current agent.
+
+### Example
+
+```
+~/.code-agents/rules/_global.md:
+  Always respond in English. Be concise.
+
+myrepo/.code-agents/rules/code-writer.md:
+  This is a Django 4.2 project using PostgreSQL 14.
+  Use 4-space indentation. Follow PEP 8.
+  Always add type hints to new functions.
+```
 
 ## Agents (12)
 

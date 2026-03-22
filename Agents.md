@@ -402,10 +402,36 @@ $ code-agents chat
   code-tester › Creating tests...
 ```
 
-Chat commands: `/help /quit /agent <name> /agents /session /clear /<agent> <prompt>`
+Chat commands: `/help /quit /agent <name> /agents /rules /run <cmd> /session /clear /<agent> <prompt>`
 
 The agent automatically works on **your current project** (detects git repo from cwd).
 If the server isn't running, chat offers to start it for you.
+
+### Agent Rules
+
+You can configure persistent rules that get injected into agent system prompts. Rules are markdown files — simple, no special syntax.
+
+**Create rules:**
+```bash
+code-agents rules create                      # project rule, all agents
+code-agents rules create --agent code-writer  # project rule, specific agent
+code-agents rules create --global             # global rule, all agents
+```
+
+**File structure:**
+```
+~/.code-agents/rules/                  ← global (all projects)
+    _global.md                         ← all agents
+    code-writer.md                     ← only code-writer
+
+myrepo/.code-agents/rules/             ← project (this repo only)
+    _global.md                         ← all agents in this repo
+    code-reviewer.md                   ← only code-reviewer in this repo
+```
+
+**Auto-refresh:** Rules are read from disk on every message. Edit a rule file in another terminal mid-chat — the next message picks up the change immediately.
+
+**In chat:** `/rules` shows which rules are active for the current agent.
 
 ### Via API / Open WebUI
 

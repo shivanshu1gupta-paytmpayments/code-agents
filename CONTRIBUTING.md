@@ -96,6 +96,7 @@ These files must stay in sync. When you change one, check the others:
 | Chat slash commands | `chat.py` (_handle_command + /help + _slash_commands list), `cli.py` (cmd_help chat section), `test_chat.py`, `Agents.md` |
 | REST endpoints | `routers/*.py`, `cli.py` (curls), `README.md`, `CLAUDE.md`, `cursor.md` |
 | Env variables | `.env.example`, `setup.py`, `cli.py` (init + doctor), `README.md`, `CLAUDE.md`, `cursor.md` |
+| Agent rules | `rules_loader.py` (loader), `chat.py` (injection + /rules), `stream.py` (server-side injection), `cli.py` (cmd_rules), `README.md`, `Agents.md`, `CLAUDE.md`, `cursor.md` |
 | Test count | `README.md` (badge + text), `CLAUDE.md`, `cursor.md` |
 | Copyright | `LICENSE`, `README.md` footer, `Agents.md` footer |
 | Install URL | `install.sh`, `cli.py` (cmd_help), `README.md` |

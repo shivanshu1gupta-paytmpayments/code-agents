@@ -80,6 +80,7 @@ poetry run python initiater/run_audit.py
 - **`${VAR}` expansion** in YAML `api_key` and `system_prompt` fields.
 - **Backends**: `"cursor"` (default) or `"claude"`. Each agent picks independently. `claude-agent-sdk` is a core dependency; `cursor-agent-sdk` is optional.
 - **Permission modes**: `default` (ask), `acceptEdits` (auto-approve), `bypassPermissions` (read-only).
+- **Agent rules**: Two-tier rules injected into system prompts. Global (`~/.code-agents/rules/`) + project (`{repo}/.code-agents/rules/`). `_global.md` = all agents, `{agent-name}.md` = specific agent. Auto-refresh on every message (no cache). Managed via `code-agents rules` CLI or `/rules` in chat.
 - **Hourly log rotation**: `logs/code-agents.log` = last hour, 168 backups (7 days).
 
 ## Environment Variables
