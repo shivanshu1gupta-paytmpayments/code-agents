@@ -28,13 +28,9 @@ async def lifespan(app: FastAPI):
     # Ensure logging is configured even when started via `uvicorn code_agents.app:app` (skips main.py).
     setup_logging()
 
-    # Load .env before agent YAML expands ${CURSOR_API_KEY} / etc.
-    try:
-        from dotenv import load_dotenv
-
-        load_dotenv()
-    except ImportError:
-        pass
+    # Load env: global config + per-repo overrides before agent YAML expands ${CURSOR_API_KEY} / etc.
+    from .env_loader import load_all_env
+    load_all_env()
     logger.info("=" * 60)
     logger.info("CODE AGENTS SERVER STARTING")
     logger.info("=" * 60)
@@ -203,11 +199,8 @@ def health():
 @app.get("/diagnostics")
 def diagnostics():
     """Safe runtime snapshot for debugging (no secrets). Use after reproduce: curl http://localhost:8000/diagnostics"""
-    try:
-        from dotenv import load_dotenv
-        load_dotenv()
-    except ImportError:
-        pass
+    from .env_loader import load_all_env
+    load_all_env()
     agents = agent_loader.list_agents()
     url_set = bool(os.getenv("CURSOR_API_URL", "").strip())
     key_set = bool(os.getenv("CURSOR_API_KEY", "").strip())

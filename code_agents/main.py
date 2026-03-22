@@ -1,8 +1,5 @@
-try:
-    from dotenv import load_dotenv
-    load_dotenv()
-except ImportError:
-    pass
+from .env_loader import load_all_env
+load_all_env()
 
 import os
 import uvicorn

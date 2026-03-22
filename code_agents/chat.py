@@ -443,16 +443,10 @@ def chat_main(args: list[str] | None = None):
     """Entry point for the interactive chat REPL."""
     args = args or []
 
-    # Load .env — use the REAL user directory (not ~/.code-agents)
+    # Load env — global config + per-repo overrides
     cwd = os.environ.get("CODE_AGENTS_USER_CWD") or os.getcwd()
-    env_file = os.path.join(cwd, ".env")
-    if os.path.exists(env_file):
-        try:
-            from dotenv import load_dotenv
-            load_dotenv(env_file, override=True)
-        except ImportError:
-            pass
-    os.environ.setdefault("TARGET_REPO_PATH", cwd)
+    from .env_loader import load_all_env
+    load_all_env(cwd)
 
     url = _server_url()
 

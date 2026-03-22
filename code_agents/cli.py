@@ -38,16 +38,9 @@ def _user_cwd() -> str:
 
 
 def _load_env():
-    """Load .env from the user's real cwd if it exists."""
-    cwd = _user_cwd()
-    env_file = os.path.join(cwd, ".env")
-    if os.path.exists(env_file):
-        try:
-            from dotenv import load_dotenv
-            load_dotenv(env_file, override=True)
-        except ImportError:
-            pass
-    os.environ.setdefault("TARGET_REPO_PATH", cwd)
+    """Load env from global config + per-repo overrides."""
+    from .env_loader import load_all_env
+    load_all_env(_user_cwd())
 
 
 def _colors():
@@ -152,8 +145,10 @@ def cmd_init():
     os.chdir(original_dir)
 
     print()
+    from .env_loader import GLOBAL_ENV_PATH, PER_REPO_FILENAME
     print(green(f"  ✓ Initialized in: {cwd}"))
-    print(f"  .env written to: {cyan(os.path.join(cwd, '.env'))}")
+    print(f"  Global config: {cyan(str(GLOBAL_ENV_PATH))}")
+    print(f"  Repo config:   {cyan(os.path.join(cwd, PER_REPO_FILENAME))}")
     print()
 
     if prompt_yes_no("Start the server now?", default=True):
@@ -167,17 +162,96 @@ def cmd_init():
         print()
 
 
+def cmd_migrate():
+    """Migrate legacy .env to centralized config."""
+    bold, green, yellow, red, cyan, dim = _colors()
+    _load_env()
+    cwd = _user_cwd()
+
+    legacy = os.path.join(cwd, ".env")
+    if not os.path.isfile(legacy):
+        print()
+        print(dim("  No legacy .env file found — nothing to migrate."))
+        print()
+        return
+
+    from .setup import parse_env_file
+    from .env_loader import GLOBAL_ENV_PATH, PER_REPO_FILENAME, split_vars
+
+    env_vars = parse_env_file(Path(legacy))
+    if not env_vars:
+        print()
+        print(dim("  Legacy .env is empty — nothing to migrate."))
+        print()
+        return
+
+    global_vars, repo_vars = split_vars(env_vars)
+
+    print()
+    print(bold("  Migrating .env to centralized config"))
+    print()
+    print(f"    Source:        {legacy} ({len(env_vars)} variables)")
+    print(f"    Global config: {GLOBAL_ENV_PATH} ({len(global_vars)} variables)")
+    print(f"    Repo config:   {os.path.join(cwd, PER_REPO_FILENAME)} ({len(repo_vars)} variables)")
+    print()
+
+    if global_vars:
+        print(f"  {bold('Global')} (API keys, server, integrations):")
+        for k in sorted(global_vars):
+            print(f"    {dim(k)}")
+        print()
+    if repo_vars:
+        print(f"  {bold('Per-repo')} (Jenkins, ArgoCD, testing):")
+        for k in sorted(repo_vars):
+            print(f"    {dim(k)}")
+        print()
+
+    try:
+        answer = input(f"  Proceed with migration? [Y/n]: ").strip().lower()
+    except (EOFError, KeyboardInterrupt):
+        print()
+        return
+    if answer not in ("", "y", "yes"):
+        print(dim("  Cancelled."))
+        return
+
+    from .setup import _write_env_to_path
+
+    if global_vars:
+        # Merge with existing global config
+        existing_global = parse_env_file(GLOBAL_ENV_PATH) if GLOBAL_ENV_PATH.is_file() else {}
+        merged_global = dict(existing_global)
+        for k, v in global_vars.items():
+            merged_global[k] = v
+        GLOBAL_ENV_PATH.parent.mkdir(parents=True, exist_ok=True)
+        _write_env_to_path(GLOBAL_ENV_PATH, merged_global, "global config")
+
+    if repo_vars:
+        repo_path = Path(os.path.join(cwd, PER_REPO_FILENAME))
+        existing_repo = parse_env_file(repo_path) if repo_path.is_file() else {}
+        merged_repo = dict(existing_repo)
+        for k, v in repo_vars.items():
+            merged_repo[k] = v
+        _write_env_to_path(repo_path, merged_repo, "repo config")
+
+    # Backup legacy .env
+    import datetime
+    ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    backup = f"{legacy}.backup.{ts}"
+    import shutil
+    shutil.move(legacy, backup)
+    print(green(f"  ✓ Legacy .env moved to: {backup}"))
+    print()
+    print(green(bold("  Migration complete!")))
+    print()
+
+
 def _start_background(repo_path: str):
     """Start the server in background and show a clean summary."""
     bold, green, yellow, red, cyan, dim = _colors()
 
-    env_file = os.path.join(repo_path, ".env")
-    if os.path.exists(env_file):
-        try:
-            from dotenv import load_dotenv
-            load_dotenv(env_file, override=True)
-        except ImportError:
-            pass
+    from .env_loader import load_all_env
+    load_all_env(repo_path)
 
     os.environ["TARGET_REPO_PATH"] = repo_path
     host = os.getenv("HOST", "0.0.0.0")
@@ -619,18 +693,31 @@ def cmd_doctor():
         print(yellow("  ! No git repo detected — chat/git-ops won't know your project"))
         warnings += 1
 
-    # .env file
-    env_file = os.path.join(cwd, ".env")
-    if os.path.isfile(env_file):
-        from .setup import parse_env_file
-        env_vars = parse_env_file(Path(env_file))
-        print(green(f"  ✓ .env file found ({len(env_vars)} variables)"))
-    elif os.path.isdir(env_file):
-        print(yellow(f"  ! .env is a directory, not a file — code-agents init expects a file"))
-        warnings += 1
+    # Config files
+    from .env_loader import GLOBAL_ENV_PATH, PER_REPO_FILENAME
+    from .setup import parse_env_file
+
+    if GLOBAL_ENV_PATH.is_file():
+        g_vars = parse_env_file(GLOBAL_ENV_PATH)
+        print(green(f"  ✓ Global config: {GLOBAL_ENV_PATH} ({len(g_vars)} variables)"))
     else:
-        print(red("  ✗ No .env file — run: code-agents init"))
+        print(red(f"  ✗ No global config — run: code-agents init"))
         issues += 1
+
+    repo_env = os.path.join(cwd, PER_REPO_FILENAME)
+    if os.path.isfile(repo_env):
+        r_vars = parse_env_file(Path(repo_env))
+        print(green(f"  ✓ Repo config: {repo_env} ({len(r_vars)} variables)"))
+    else:
+        print(dim(f"  · No repo config ({PER_REPO_FILENAME}) — optional"))
+
+    # Legacy .env fallback
+    legacy_env = os.path.join(cwd, ".env")
+    if os.path.isfile(legacy_env):
+        print(yellow(f"  ! Legacy .env found — consider running: code-agents migrate"))
+        warnings += 1
+    elif os.path.isdir(legacy_env):
+        print(dim(f"  · .env is a directory (ignored)"))
 
     # ── Backend ──
     print()
@@ -1521,6 +1608,7 @@ def _curls_for_agent(agent_name: str, url: str):
 
 COMMANDS = {
     "init":      ("Initialize code-agents in current repo",        cmd_init),
+    "migrate":   ("Migrate legacy .env to centralized config",     cmd_migrate),
     "start":     ("Start the server",                               cmd_start),
     "chat":      ("Interactive chat with agents",                   None),  # special handling
     "shutdown":  ("Shutdown the server",                              cmd_shutdown),
