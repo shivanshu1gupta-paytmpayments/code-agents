@@ -80,9 +80,9 @@ class TestCmdHelp:
         cmd_help()
         output = capsys.readouterr().out
 
-        # All 17 commands should appear
+        # All 18 commands should appear
         commands = [
-            "init", "start", "chat", "setup", "shutdown", "status",
+            "init", "migrate", "start", "chat", "setup", "shutdown", "status",
             "logs", "config", "doctor", "branches", "diff", "test",
             "review", "pipeline", "agents", "curls", "version", "help",
         ]
