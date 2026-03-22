@@ -260,10 +260,64 @@ def _start_background(repo_path: str):
     print()
 
 
+def _check_workspace_trust(repo_path: str) -> bool:
+    """Check cursor-agent workspace trust for the target repo. Returns True if OK."""
+    import shutil
+    import subprocess
+
+    bold, green, yellow, red, cyan, dim = _colors()
+
+    # Skip if using HTTP mode or cursor-agent not installed
+    if os.getenv("CURSOR_API_URL", "").strip():
+        return True
+    cli_path = shutil.which("cursor-agent")
+    if not cli_path:
+        return True
+
+    try:
+        result = subprocess.run(
+            [cli_path, "--print", "--output-format", "stream-json", "agent", "-"],
+            cwd=repo_path,
+            input="hi",
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        return True
+
+    if "Workspace Trust Required" in (result.stderr or ""):
+        print()
+        print(yellow("  ⚠ Cursor Workspace Trust Required"))
+        print()
+        print(f"    cursor-agent needs to trust this directory:")
+        print(f"    {bold(repo_path)}")
+        print()
+        print(f"    {bold('Fix it (pick one):')}")
+        print()
+        print(f"    {cyan('Option 1:')} Run interactively to approve:")
+        print(f"    {dim(f'  cd {repo_path} && cursor-agent agent')}")
+        print(f"    {dim('  (type y to trust, then Ctrl+C to exit)')}")
+        print()
+        print(f"    {cyan('Option 2:')} Use HTTP mode (no CLI needed):")
+        print(f"    {dim('  Set CURSOR_API_URL in your .env file')}")
+        print()
+        print(f"    {cyan('Option 3:')} Use a Claude backend agent instead:")
+        print(f"    {dim('  Set ANTHROPIC_API_KEY in .env, pick a claude backend agent')}")
+        print()
+        return False
+
+    return True
+
+
 def cmd_start():
     """Start the server in background pointing at the current directory."""
     _load_env()
     cwd = _user_cwd()
+
+    # Pre-flight: check workspace trust before starting server
+    if not _check_workspace_trust(cwd):
+        return
 
     # Foreground mode only if explicitly requested (for debugging)
     if "--fg" in sys.argv or "--foreground" in sys.argv:
@@ -580,6 +634,26 @@ def cmd_doctor():
         print(green(f"  ✓ CURSOR_API_URL set (HTTP mode)"))
     else:
         print(dim("  · CURSOR_API_URL not set (using CLI mode — needs Cursor desktop)"))
+
+    # Workspace trust (only for CLI mode with cursor backend)
+    if cursor_key and not cursor_url:
+        import shutil as _shutil
+        import subprocess as _sp
+        cli_path = _shutil.which("cursor-agent")
+        if cli_path:
+            try:
+                _trust_result = _sp.run(
+                    [cli_path, "--print", "--output-format", "stream-json", "agent", "-"],
+                    cwd=cwd, input="hi", capture_output=True, text=True, timeout=10,
+                )
+                if "Workspace Trust Required" in (_trust_result.stderr or ""):
+                    print(red(f"  ✗ Workspace not trusted by cursor-agent"))
+                    print(dim(f"    Run: cd {cwd} && cursor-agent agent"))
+                    issues += 1
+                else:
+                    print(green("  ✓ Workspace trusted by cursor-agent"))
+            except (Exception,):
+                print(dim("  · Could not check workspace trust"))
 
     # cursor-agent-sdk
     try:

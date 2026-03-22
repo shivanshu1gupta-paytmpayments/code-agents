@@ -92,6 +92,68 @@ def _check_server(url: str) -> bool:
         return False
 
 
+def _check_workspace_trust(repo_path: str) -> bool:
+    """
+    Pre-flight check: ensure cursor-agent trusts the workspace directory.
+
+    Runs a quick cursor-agent invocation in the target repo. If cursor-agent
+    prompts for workspace trust, it will fail with exit code 1 and stderr
+    containing "Workspace Trust Required". In that case, we tell the user
+    how to fix it before they hit the error mid-conversation.
+
+    Returns True if trust is OK (or cursor-agent not found / HTTP mode).
+    Returns False if trust is required and user chose not to fix it.
+    """
+    import shutil
+    import subprocess
+
+    # Skip if using HTTP mode (no CLI needed)
+    cursor_url = os.getenv("CURSOR_API_URL", "").strip()
+    if cursor_url:
+        return True
+
+    # Skip if cursor-agent CLI not installed
+    cli_path = shutil.which("cursor-agent")
+    if not cli_path:
+        return True
+
+    # Run a quick no-op to test trust
+    try:
+        result = subprocess.run(
+            [cli_path, "--print", "--output-format", "stream-json", "agent", "-"],
+            cwd=repo_path,
+            input="hi",
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        return True  # Can't test, let the real call handle it
+
+    if "Workspace Trust Required" in (result.stderr or ""):
+        print()
+        print(yellow("  ⚠ Cursor Workspace Trust Required"))
+        print()
+        print(f"    cursor-agent needs to trust this directory:")
+        print(f"    {bold(repo_path)}")
+        print()
+        print(f"    {bold('Fix it now (pick one):')}")
+        print()
+        print(f"    {cyan('Option 1:')} Run interactively to approve:")
+        print(f"    {dim(f'  cd {repo_path} && cursor-agent agent')}")
+        print(f"    {dim('  (type \'y\' to trust, then Ctrl+C to exit)')}")
+        print()
+        print(f"    {cyan('Option 2:')} Use HTTP mode (no CLI needed):")
+        print(f"    {dim('  Set CURSOR_API_URL in your .env file')}")
+        print()
+        print(f"    {cyan('Option 3:')} Use a Claude backend agent instead:")
+        print(f"    {dim('  Set ANTHROPIC_API_KEY in .env, pick a claude backend agent')}")
+        print()
+        return False
+
+    return True
+
+
 def _get_agents(url: str) -> dict[str, str]:
     """Fetch agent list from server. Returns {name: display_name}."""
     import httpx
@@ -480,6 +542,10 @@ def chat_main(args: list[str] | None = None):
         if parent == check_dir:
             break  # reached filesystem root
         check_dir = parent
+
+    # Pre-flight: check cursor-agent workspace trust
+    if not _check_workspace_trust(repo_path):
+        return
 
     # State
     state = {
