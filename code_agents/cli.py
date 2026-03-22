@@ -1771,6 +1771,12 @@ COMMANDS = {
     "completions": ("Generate shell completion script",             None),  # special handling
 }
 
+_AGENT_NAMES_FOR_COMPLETION = [
+    "agent-router", "argocd-verify", "code-reasoning", "code-reviewer",
+    "code-tester", "code-writer", "git-ops", "jenkins-build",
+    "jenkins-deploy", "pipeline-orchestrator", "redash-query", "test-coverage",
+]
+
 # Subcommands for commands that take them
 _SUBCOMMANDS = {
     "rules":    ["list", "create", "edit", "delete"],
@@ -1778,22 +1784,15 @@ _SUBCOMMANDS = {
     "start":    ["--fg", "--foreground"],
     "rules create": ["--global", "--agent"],
     "rules list": ["--agent"],
-    "chat":     list(AGENT_ROLES.keys()) if "AGENT_ROLES" in dir() else [],
+    "chat":     _AGENT_NAMES_FOR_COMPLETION,
 }
-
-# Agent names for chat completion
-try:
-    from .chat import AGENT_ROLES as _AGENT_ROLES
-    _SUBCOMMANDS["chat"] = list(_AGENT_ROLES.keys())
-except Exception:
-    pass
 
 
 def _generate_zsh_completion() -> str:
     """Generate zsh completion script for code-agents."""
     cmds = sorted(COMMANDS.keys())
     cmd_list = " ".join(cmds) + " help"
-    agents = " ".join(sorted(AGENT_ROLES.keys())) if "AGENT_ROLES" in dir() else ""
+    agents = " ".join(_AGENT_NAMES_FOR_COMPLETION)
 
     return f'''#compdef code-agents
 # Zsh completion for code-agents CLI
