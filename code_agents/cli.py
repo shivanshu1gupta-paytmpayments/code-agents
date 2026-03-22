@@ -380,7 +380,13 @@ def cmd_agents():
         print()
         return
 
-    agents = data.get("agents", data) if isinstance(data, dict) else data
+    # Server may return {"data": [...]}, {"agents": [...]}, or a plain list
+    if isinstance(data, dict):
+        agents = data.get("data") or data.get("agents") or []
+    elif isinstance(data, list):
+        agents = data
+    else:
+        agents = []
     print()
     print(bold("  Available Agents:"))
     print()

@@ -87,8 +87,14 @@ def _get_agents(url: str) -> dict[str, str]:
     try:
         r = httpx.get(f"{url}/v1/agents", timeout=5.0)
         data = r.json()
-        agents = data.get("agents", data) if isinstance(data, dict) else data
-        return {a.get("name", "?"): a.get("display_name", "") for a in agents}
+        # Server may return {"data": [...]}, {"agents": [...]}, or a plain list
+        if isinstance(data, dict):
+            agents = data.get("data") or data.get("agents") or []
+        elif isinstance(data, list):
+            agents = data
+        else:
+            agents = []
+        return {a.get("name", "?"): a.get("display_name", "") for a in agents if isinstance(a, dict)}
     except Exception:
         return {}
 
