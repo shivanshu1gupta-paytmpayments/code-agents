@@ -27,6 +27,8 @@ code-agents migrate                 # migrate legacy .env to centralized config
 code-agents agents                  # list 12 agents
 code-agents config                  # show config (secrets masked)
 code-agents rules                   # manage agent rules (list/create/edit/delete)
+code-agents restart                 # restart server (shutdown + start)
+code-agents completions --install   # install shell tab-completion
 code-agents migrate                 # migrate legacy .env to centralized config
 code-agents logs [N]                # tail log file
 code-agents branches                # list git branches
@@ -42,13 +44,13 @@ code-agents setup                   # full setup wizard
 code-agents version                 # version info
 
 # Dev
-poetry run pytest                   # 169 tests
+poetry run pytest                   # 178 tests
 poetry run python initiater/run_audit.py
 ```
 
 ## Architecture
 
-- **`code_agents/cli.py`** — Unified CLI entry point: 19 commands (init, migrate, start, chat, shutdown, status, doctor, config, logs, branches, diff, test, review, pipeline, agents, curls, setup, version, help)
+- **`code_agents/cli.py`** — Unified CLI entry point: 21 commands (init, migrate, rules, start, restart, chat, shutdown, status, doctor, config, logs, branches, diff, test, review, pipeline, agents, curls, setup, version, completions, help)
 - **`code_agents/chat.py`** — Interactive chat REPL: agent picker menu, streaming responses, multi-turn sessions, `/agent` switching, inline agent delegation (`/<agent> <prompt>`), tab-completion for slash commands and agent names, auto-detects git repo from cwd, auto-starts server if not running
 - **`code_agents/setup.py`** — Interactive setup wizard (7 steps)
 - **`code_agents/main.py`** — Uvicorn server launcher
@@ -67,7 +69,7 @@ poetry run python initiater/run_audit.py
 - **`code_agents/pipeline_state.py`** — In-memory 6-step pipeline state machine
 - **`code_agents/routers/`** — FastAPI route handlers: completions, agents_list, git_ops, testing, jenkins, argocd, pipeline, redash, elasticsearch, atlassian_oauth_web
 - **`agents/*.yaml`** — 12 agent definitions
-- **`tests/`** — 169 tests
+- **`tests/`** — 178 tests
 - **`initiater/`** — Project quality audit system (14 rules)
 
 ## Key Patterns
@@ -95,11 +97,11 @@ Key vars (see `.env.example` for full list):
 
 ## Testing
 
-- 169 tests in `tests/` — `poetry run pytest`
+- 178 tests in `tests/` — `poetry run pytest`
 - `test_chat.py` (59): agent roles, `_get_agents` parsing, server check, slash commands, repo detection, SSE parsing, inline agent delegation, tab-completion, command extraction
 - `test_env_loader.py` (21): split_vars classification, load_all_env order (global → legacy → per-repo), .env directory handling, var set overlap checks
 - `test_rules_loader.py` (18): rules dir reading, load_rules merge order, agent targeting, auto-refresh, list_rules filtering
-- `test_cli.py` (24): server URL, help completeness (all 19 cmds, slash cmds, agents), version, doctor, config, curls, dispatcher
+- `test_cli.py` (24): server URL, help completeness (all 21 cmds, slash cmds, agents), version, doctor, config, curls, dispatcher
 - `test_git_client.py` (10): ref validation, branches, diff, log, status
 - `test_jenkins_client.py` (5): Jenkins + ArgoCD client init
 - `test_routers.py` (14): all FastAPI routers, pipeline lifecycle, health/diagnostics

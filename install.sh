@@ -201,6 +201,24 @@ if ! echo "$PATH" | grep -q "$HOME/.local/bin"; then
     export PATH="$HOME/.local/bin:$PATH"
 fi
 
+# Install shell tab-completion
+dim "Installing shell tab-completion..."
+if [ -f "$HOME/.zshrc" ]; then
+    if ! grep -q "# code-agents completion" "$HOME/.zshrc" 2>/dev/null; then
+        "$HOME/.local/bin/code-agents" completions --zsh >> "$HOME/.zshrc" 2>/dev/null
+        info "Tab-completion installed in ~/.zshrc"
+    else
+        info "Tab-completion already installed in ~/.zshrc"
+    fi
+elif [ -f "$HOME/.bashrc" ]; then
+    if ! grep -q "# code-agents completion" "$HOME/.bashrc" 2>/dev/null; then
+        "$HOME/.local/bin/code-agents" completions --bash >> "$HOME/.bashrc" 2>/dev/null
+        info "Tab-completion installed in ~/.bashrc"
+    else
+        info "Tab-completion already installed in ~/.bashrc"
+    fi
+fi
+
 # ============================================================================
 # STEP 5: Done!
 # ============================================================================

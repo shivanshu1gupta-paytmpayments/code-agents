@@ -2,7 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
-[![Tests: 169 passing](https://img.shields.io/badge/tests-169%20passing-brightgreen.svg)]()
+[![Tests: 178 passing](https://img.shields.io/badge/tests-178%20passing-brightgreen.svg)]()
 
 AI-powered code agent platform with interactive chat and a built-in CI/CD pipeline. Define agents in YAML, chat with them from the terminal, and automate: **review → test → build → deploy → verify → rollback**.
 
@@ -78,8 +78,10 @@ code-agents help                         # full help with all args
 | `init` | | Configure keys, write global + per-repo config |
 | `migrate` | | Migrate legacy .env to centralized config |
 | `start` | `[--fg]` | Start server (background). `--fg` for foreground |
+| `restart` | | Restart the server (shutdown + start) |
 | `chat` | `[agent-name]` | Interactive chat. No args = show agent picker |
 | `setup` | | Full interactive setup wizard (7 steps) |
+| `completions` | `[--install\|--zsh\|--bash]` | Install shell tab-completion |
 
 ### Server Management
 | Command | Args | Description |
@@ -223,7 +225,7 @@ Full list: `.env.example`
 ## Testing
 
 ```bash
-poetry run pytest       # 169 tests
+poetry run pytest       # 178 tests
 code-agents doctor      # diagnose setup
 code-agents test        # run tests on target repo
 ```
@@ -256,13 +258,14 @@ code-agents/
     jenkins_build.yaml          jenkins_deploy.yaml
     argocd_verify.yaml          pipeline_orchestrator.yaml
   code_agents/                  # Python package
-    cli.py                      #   CLI: 19 commands (init/migrate/start/chat/shutdown/...)
+    cli.py                      #   CLI: 21 commands (init/migrate/start/chat/shutdown/...)
     chat.py                     #   Interactive chat REPL with streaming + tab-completion
     setup.py                    #   Interactive setup wizard
     main.py                     #   Uvicorn server entry point
     app.py                      #   FastAPI app, middleware, logging
     config.py                   #   Settings + AgentLoader
     env_loader.py               #   Centralized env loading (global + per-repo)
+    rules_loader.py             #   Agent rules (global + project, auto-refresh)
     backend.py                  #   Backend abstraction (cursor/claude, claude-agent-sdk built-in)
     stream.py                   #   SSE streaming + response builders
     models.py                   #   Pydantic request/response models
@@ -279,13 +282,14 @@ code-agents/
       completions.py  agents_list.py  git_ops.py  testing.py
       jenkins.py  argocd.py  pipeline.py  redash.py
       elasticsearch.py  atlassian_oauth_web.py
-  tests/                        # 169 tests
+  tests/                        # 178 tests
     test_chat.py                #   Chat REPL, slash commands, agent parsing, SSE, delegation, tab-completion
     test_cli.py                 #   CLI commands, help, config, curls, dispatcher
     test_git_client.py          #   Git operations (real temp repos)
     test_jenkins_client.py      #   Jenkins + ArgoCD client init
     test_routers.py             #   All FastAPI routers + pipeline lifecycle
     test_env_loader.py          #   Centralized config loading, var classification
+    test_rules_loader.py        #   Rules loading, merge order, agent targeting
     test_testing_client.py      #   Test detection, coverage, pipeline state
   scripts/                      # Utility scripts
   initiater/                    # Project audit system (14 rules)
