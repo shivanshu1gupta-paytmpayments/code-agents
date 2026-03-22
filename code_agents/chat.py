@@ -178,6 +178,46 @@ def _stream_chat(
 # ---------------------------------------------------------------------------
 
 
+def _make_completer(
+    slash_commands: list[str], agent_names: list[str]
+) -> callable:
+    """
+    Build a readline completer for slash commands and agent names.
+
+    Returns a function suitable for readline.set_completer().
+    """
+    agent_completions = [f"/{name}" for name in agent_names]
+    all_completions = slash_commands + agent_completions
+
+    def completer(text: str, idx: int) -> Optional[str]:
+        if not text.startswith("/"):
+            return None
+        matches = [c for c in all_completions if c.startswith(text)]
+        return matches[idx] if idx < len(matches) else None
+
+    return completer
+
+
+def _parse_inline_delegation(
+    user_input: str, available_agents: dict[str, str]
+) -> tuple[Optional[str], Optional[str]]:
+    """
+    Parse a slash command to see if it's an inline agent delegation.
+
+    Returns (agent_name, prompt) if it matches, or (None, None) otherwise.
+    A bare agent name with no prompt returns (agent_name, "") for permanent switch.
+    """
+    if not user_input.startswith("/"):
+        return None, None
+    parts = user_input.split(None, 1)
+    slash_cmd = parts[0][1:]  # strip leading /
+    slash_arg = parts[1] if len(parts) > 1 else ""
+
+    if slash_cmd in available_agents:
+        return slash_cmd, slash_arg
+    return None, None
+
+
 def _handle_command(cmd: str, state: dict, url: str) -> Optional[str]:
     """
     Handle a slash command. Returns None to continue, or "quit" to exit.
@@ -194,11 +234,22 @@ def _handle_command(cmd: str, state: dict, url: str) -> Optional[str]:
         print()
         print(bold("  Chat Commands:"))
         print(f"    {cyan('/quit'):<16} Exit chat")
-        print(f"    {cyan('/agent <name>'):<16} Switch to another agent")
+        print(f"    {cyan('/agent <name>'):<16} Switch to another agent permanently")
         print(f"    {cyan('/agents'):<16} List all available agents")
         print(f"    {cyan('/session'):<16} Show current session ID")
         print(f"    {cyan('/clear'):<16} Clear session (fresh start, same agent)")
         print(f"    {cyan('/help'):<16} Show this help")
+        print()
+        print(bold("  Inline agent delegation:"))
+        print(f"    {cyan('/<agent> <prompt>'):<16}")
+        print(f"    Send a one-shot prompt to another agent without switching.")
+        print(f"    Your current agent stays active after the response.")
+        print()
+        print(f"    {dim('Example:')}")
+        print(f"    {dim('/code-reviewer Review the auth module for security issues')}")
+        print(f"    {dim('/code-writer Add input validation to the login function')}")
+        print(f"    {dim('/code-tester Write unit tests for PaymentService')}")
+        print(f"    {dim('/git-ops Show the last 5 commits')}")
         print()
 
     elif command == "/agents":
@@ -409,6 +460,22 @@ def chat_main(args: list[str] | None = None):
         "repo_path": repo_path,
     }
 
+    # Tab-completion for slash commands and agent names
+    _slash_commands = ["/help", "/quit", "/exit", "/agents", "/agent", "/session", "/clear"]
+    _completer = _make_completer(_slash_commands, list(agents.keys()))
+
+    try:
+        import readline
+        readline.set_completer(_completer)
+        readline.set_completer_delims(" \t")
+        # macOS uses libedit which needs a different parse_and_bind syntax
+        if "libedit" in (readline.__doc__ or ""):
+            readline.parse_and_bind("bind ^I rl_complete")
+        else:
+            readline.parse_and_bind("tab: complete")
+    except ImportError:
+        pass  # readline not available on some platforms
+
     # Banner
     display_name = agents.get(agent_name, agent_name)
     role = AGENT_ROLES.get(agent_name, "")
@@ -453,6 +520,72 @@ def chat_main(args: list[str] | None = None):
 
             # Slash commands
             if user_input.startswith("/"):
+                # Is this an agent name? e.g. /code-reasoning, /code-writer
+                available_agents = _get_agents(url) if not hasattr(state, "_agents_cache") else state.get("_agents_cache", {})
+                if not available_agents:
+                    available_agents = _get_agents(url)
+                state["_agents_cache"] = available_agents
+
+                delegate_agent, delegate_prompt = _parse_inline_delegation(
+                    user_input, available_agents
+                )
+
+                if delegate_agent and delegate_prompt:
+                    # Inline delegation — send this prompt to that agent, then return to current
+                    role = AGENT_ROLES.get(delegate_agent, "")
+                    print(dim(f"\n  Delegating to {bold(cyan(delegate_agent))}: {dim(role)}"))
+
+                    # Build messages with repo context
+                    repo = state.get("repo_path", cwd)
+                    repo_name = os.path.basename(repo)
+                    system_context = (
+                        f"IMPORTANT: You are working on the project at: {repo}\n"
+                        f"Project name: {repo_name}\n"
+                        f"This is the user's repository — all your analysis, code reading, "
+                        f"file operations, and responses must be about THIS project's files. "
+                        f"Do NOT describe the code-agents tool itself.\n"
+                        f"When reading files, searching code, or explaining architecture — "
+                        f"always operate within {repo}."
+                    )
+                    delegate_messages = [
+                        {"role": "system", "content": system_context},
+                        {"role": "user", "content": delegate_prompt},
+                    ]
+
+                    agent_label = bold(magenta(delegate_agent))
+                    sys.stdout.write(f"\n  {agent_label} › ")
+                    sys.stdout.flush()
+
+                    got_text = False
+                    for piece_type, piece_content in _stream_chat(
+                        url, delegate_agent, delegate_messages, None,
+                        cwd=state.get("repo_path"),
+                    ):
+                        if piece_type == "text":
+                            got_text = True
+                            sys.stdout.write(piece_content)
+                            sys.stdout.flush()
+                        elif piece_type == "reasoning":
+                            sys.stdout.write(f"\n    {dim(piece_content.strip())}")
+                            sys.stdout.flush()
+                        elif piece_type == "error":
+                            print(red(f"\n  Error: {piece_content}"))
+
+                    if got_text:
+                        print()
+                    print()
+                    # Back to current agent — no state change
+                    current = state["agent"]
+                    print(dim(f"  (back to {current})"))
+                    print()
+                    continue
+
+                elif delegate_agent and not delegate_prompt:
+                    # Just agent name with no prompt — switch permanently (same as /agent)
+                    _handle_command(f"/agent {delegate_agent}", state, url)
+                    continue
+
+                # Regular slash command
                 result = _handle_command(user_input, state, url)
                 if result == "quit":
                     print()
@@ -469,8 +602,7 @@ def chat_main(args: list[str] | None = None):
                 f"Project name: {repo_name}\n"
                 f"This is the user's repository — all your analysis, code reading, "
                 f"file operations, and responses must be about THIS project's files. "
-                f"Do NOT describe the code-agents tool itself. "
-                f"The user's current working directory is: {repo}\n"
+                f"Do NOT describe the code-agents tool itself.\n"
                 f"When reading files, searching code, or explaining architecture — "
                 f"always operate within {repo}."
             )
