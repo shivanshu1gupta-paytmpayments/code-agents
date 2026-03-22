@@ -479,3 +479,44 @@ class TestTabCompletion:
             idx += 1
         assert "/agent" in results
         assert "/agents" in results
+
+    def test_complete_agent_second_word(self):
+        """'/agent code-' + Tab completes bare agent names."""
+        from unittest.mock import patch
+        completer = self._completer()
+        # Simulate readline buffer = "/agent code-", text = "code-"
+        with patch("readline.get_line_buffer", return_value="/agent code-"):
+            results = []
+            idx = 0
+            while True:
+                result = completer("code-", idx)
+                if result is None:
+                    break
+                results.append(result)
+                idx += 1
+            assert set(results) == {"code-reasoning", "code-writer", "code-tester", "code-reviewer"}
+
+    def test_complete_agent_second_word_partial(self):
+        """'/agent git' + Tab completes to 'git-ops'."""
+        from unittest.mock import patch
+        completer = self._completer()
+        with patch("readline.get_line_buffer", return_value="/agent git"):
+            assert completer("git", 0) == "git-ops"
+            assert completer("git", 1) is None
+
+    def test_complete_agent_second_word_empty(self):
+        """'/agent ' + Tab shows all agent names."""
+        from unittest.mock import patch
+        completer = self._completer()
+        with patch("readline.get_line_buffer", return_value="/agent "):
+            results = []
+            idx = 0
+            while True:
+                result = completer("", idx)
+                if result is None:
+                    break
+                results.append(result)
+                idx += 1
+            assert len(results) == 5  # all 5 agents in AGENT_NAMES
+            assert "code-reasoning" in results
+            assert "git-ops" in results
