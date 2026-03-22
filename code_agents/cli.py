@@ -467,91 +467,238 @@ def cmd_config():
 
 
 def cmd_doctor():
-    """Diagnose common issues."""
+    """Diagnose common issues — comprehensive health check."""
     bold, green, yellow, red, cyan, dim = _colors()
     _load_env()
     cwd = os.getcwd()
     issues = 0
+    warnings = 0
 
     print()
     print(bold("  Code Agents Doctor"))
+    print(bold("  " + "═" * 50))
+
+    # ── Environment ──
+    print()
+    print(bold("  Environment"))
     print(bold("  " + "─" * 40))
 
-    # Check .env
+    # Python
+    if sys.version_info >= (3, 10):
+        print(green(f"  ✓ Python {sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"))
+    else:
+        print(red(f"  ✗ Python {sys.version_info.major}.{sys.version_info.minor} — requires 3.10+"))
+        issues += 1
+
+    # Poetry
+    import shutil
+    if shutil.which("poetry"):
+        print(green("  ✓ Poetry installed"))
+    else:
+        print(yellow("  ! Poetry not found in PATH"))
+        warnings += 1
+
+    # Git
+    if shutil.which("git"):
+        print(green("  ✓ Git installed"))
+    else:
+        print(red("  ✗ Git not found — required for git-ops"))
+        issues += 1
+
+    # ── Repository ──
+    print()
+    print(bold("  Repository"))
+    print(bold("  " + "─" * 40))
+
+    # Git repo
+    git_root = None
+    check = cwd
+    while True:
+        if os.path.isdir(os.path.join(check, ".git")):
+            git_root = check
+            break
+        parent = os.path.dirname(check)
+        if parent == check:
+            break
+        check = parent
+
+    if git_root:
+        repo_name = os.path.basename(git_root)
+        print(green(f"  ✓ Git repo: {repo_name} ({git_root})"))
+    else:
+        print(yellow("  ! No git repo detected — chat/git-ops won't know your project"))
+        warnings += 1
+
+    # .env file
     env_file = os.path.join(cwd, ".env")
     if os.path.exists(env_file):
-        print(green("  ✓ .env file found"))
+        from .setup import parse_env_file
+        env_vars = parse_env_file(Path(env_file))
+        print(green(f"  ✓ .env file found ({len(env_vars)} variables)"))
     else:
         print(red("  ✗ No .env file — run: code-agents init"))
         issues += 1
 
-    # Check Python
-    import sys
-    if sys.version_info >= (3, 10):
-        print(green(f"  ✓ Python {sys.version_info.major}.{sys.version_info.minor}"))
+    # ── Backend ──
+    print()
+    print(bold("  Backend"))
+    print(bold("  " + "─" * 40))
+
+    # API keys
+    cursor_key = os.getenv("CURSOR_API_KEY", "")
+    anthropic_key = os.getenv("ANTHROPIC_API_KEY", "")
+    if cursor_key:
+        print(green(f"  ✓ CURSOR_API_KEY set ({cursor_key[:8]}...)"))
     else:
-        print(red(f"  ✗ Python {sys.version_info.major}.{sys.version_info.minor} — need 3.10+"))
+        print(yellow("  ! CURSOR_API_KEY not set"))
+
+    if anthropic_key:
+        print(green(f"  ✓ ANTHROPIC_API_KEY set ({anthropic_key[:8]}...)"))
+    else:
+        print(dim("  · ANTHROPIC_API_KEY not set (optional)"))
+
+    if not cursor_key and not anthropic_key:
+        print(red("  ✗ No backend key configured — run: code-agents init"))
         issues += 1
 
-    # Check git repo
-    if os.path.isdir(os.path.join(cwd, ".git")):
-        print(green(f"  ✓ Git repo detected"))
+    # Cursor API URL
+    cursor_url = os.getenv("CURSOR_API_URL", "")
+    if cursor_url:
+        print(green(f"  ✓ CURSOR_API_URL set (HTTP mode)"))
     else:
-        print(yellow("  ! Not a git repo (git-ops commands won't work)"))
+        print(dim("  · CURSOR_API_URL not set (using CLI mode — needs Cursor desktop)"))
 
-    # Check API key
-    if os.getenv("CURSOR_API_KEY") or os.getenv("ANTHROPIC_API_KEY"):
-        print(green("  ✓ Backend API key configured"))
-    else:
-        print(red("  ✗ No CURSOR_API_KEY or ANTHROPIC_API_KEY — run: code-agents init"))
-        issues += 1
-
-    # Check cursor-agent-sdk
+    # cursor-agent-sdk
     try:
         import cursor_agent_sdk
         print(green("  ✓ cursor-agent-sdk installed"))
     except ImportError:
-        print(yellow("  ! cursor-agent-sdk not installed (needed for Cursor backend)"))
+        if cursor_key:
+            print(yellow("  ! cursor-agent-sdk not installed (needed for Cursor backend)"))
+            warnings += 1
+        else:
+            print(dim("  · cursor-agent-sdk not installed"))
 
-    # Check server running
+    # claude-agent-sdk
+    try:
+        import claude_agent_sdk
+        print(green("  ✓ claude-agent-sdk installed"))
+    except ImportError:
+        if anthropic_key:
+            print(yellow("  ! claude-agent-sdk not installed (needed for Claude backend)"))
+            warnings += 1
+        else:
+            print(dim("  · claude-agent-sdk not installed"))
+
+    # ── Server ──
+    print()
+    print(bold("  Server"))
+    print(bold("  " + "─" * 40))
+
+    url = _server_url()
     data = _api_get("/health")
     if data and data.get("status") == "ok":
-        print(green(f"  ✓ Server running at {_server_url()}"))
+        print(green(f"  ✓ Server running at {url}"))
+        # Check agents loaded
+        diag = _api_get("/diagnostics")
+        if diag:
+            agent_count = len(diag.get("agents", []))
+            print(green(f"  ✓ {agent_count} agents loaded"))
+            print(f"    Version: {diag.get('package_version', '?')}")
     else:
-        print(yellow(f"  ! Server not running at {_server_url()}"))
+        print(yellow(f"  ! Server not running at {url}"))
+        print(dim(f"    Start with: code-agents start"))
+        warnings += 1
 
-    # Check logs directory
+    # Logs
     log_dir = _find_code_agents_home() / "logs"
-    if log_dir.exists():
-        print(green(f"  ✓ Log directory exists"))
+    log_file = log_dir / "code-agents.log"
+    if log_file.exists():
+        size = log_file.stat().st_size
+        size_str = f"{size / 1024:.0f}KB" if size < 1024 * 1024 else f"{size / 1024 / 1024:.1f}MB"
+        print(green(f"  ✓ Log file: {size_str}"))
+    elif log_dir.exists():
+        print(dim("  · Log directory exists (no log file yet)"))
     else:
-        print(yellow("  ! Log directory missing (will be created on server start)"))
+        print(dim("  · No log directory (created on first server start)"))
 
-    # Check Jenkins
-    if os.getenv("JENKINS_URL"):
-        if os.getenv("JENKINS_API_TOKEN"):
-            print(green("  ✓ Jenkins configured"))
+    # ── Integrations ──
+    print()
+    print(bold("  Integrations"))
+    print(bold("  " + "─" * 40))
+
+    # Jenkins
+    jenkins_url = os.getenv("JENKINS_URL", "")
+    if jenkins_url:
+        jenkins_user = os.getenv("JENKINS_USERNAME", "")
+        jenkins_token = os.getenv("JENKINS_API_TOKEN", "")
+        jenkins_build = os.getenv("JENKINS_BUILD_JOB", "")
+        jenkins_deploy = os.getenv("JENKINS_DEPLOY_JOB", "")
+        if jenkins_user and jenkins_token:
+            print(green(f"  ✓ Jenkins: {jenkins_url}"))
+            if jenkins_build:
+                print(f"    Build job: {jenkins_build}")
+            else:
+                print(yellow("    ! JENKINS_BUILD_JOB not set"))
+                warnings += 1
+            if jenkins_deploy:
+                print(f"    Deploy job: {jenkins_deploy}")
+            else:
+                print(dim("    · JENKINS_DEPLOY_JOB not set (optional)"))
+            # Warn if job looks like a full URL
+            for job_var, job_val in [("BUILD", jenkins_build), ("DEPLOY", jenkins_deploy)]:
+                if job_val and job_val.startswith("http"):
+                    print(red(f"    ✗ JENKINS_{job_var}_JOB looks like a URL — use job path only"))
+                    print(dim(f"      e.g. 'pg2/pg2-dev-build-jobs' not '{job_val}'"))
+                    issues += 1
         else:
-            print(red("  ✗ JENKINS_URL set but JENKINS_API_TOKEN missing"))
+            print(red("  ✗ Jenkins URL set but missing USERNAME or API_TOKEN"))
             issues += 1
     else:
-        print(dim("  · Jenkins not configured (optional)"))
+        print(dim("  · Jenkins not configured"))
 
-    # Check ArgoCD
-    if os.getenv("ARGOCD_URL"):
-        if os.getenv("ARGOCD_AUTH_TOKEN"):
-            print(green("  ✓ ArgoCD configured"))
+    # ArgoCD
+    argocd_url = os.getenv("ARGOCD_URL", "")
+    if argocd_url:
+        argocd_token = os.getenv("ARGOCD_AUTH_TOKEN", "")
+        argocd_app = os.getenv("ARGOCD_APP_NAME", "")
+        if argocd_token:
+            print(green(f"  ✓ ArgoCD: {argocd_url}"))
+            if argocd_app:
+                print(f"    App: {argocd_app}")
+            else:
+                print(yellow("    ! ARGOCD_APP_NAME not set"))
+                warnings += 1
         else:
             print(red("  ✗ ARGOCD_URL set but ARGOCD_AUTH_TOKEN missing"))
             issues += 1
     else:
-        print(dim("  · ArgoCD not configured (optional)"))
+        print(dim("  · ArgoCD not configured"))
 
-    print()
-    if issues == 0:
-        print(green(bold("  All checks passed!")))
+    # Elasticsearch
+    es_url = os.getenv("ELASTICSEARCH_URL", "") or os.getenv("ELASTICSEARCH_CLOUD_ID", "")
+    if es_url:
+        print(green(f"  ✓ Elasticsearch configured"))
     else:
-        print(yellow(f"  {issues} issue(s) found — fix them and run 'code-agents doctor' again"))
+        print(dim("  · Elasticsearch not configured"))
+
+    # Redash
+    redash_url = os.getenv("REDASH_BASE_URL", "")
+    if redash_url:
+        print(green(f"  ✓ Redash: {redash_url}"))
+    else:
+        print(dim("  · Redash not configured"))
+
+    # ── Summary ──
+    print()
+    print(bold("  " + "═" * 50))
+    if issues == 0 and warnings == 0:
+        print(green(bold("  ✓ All checks passed!")))
+    elif issues == 0:
+        print(yellow(f"  {warnings} warning(s), no critical issues"))
+    else:
+        print(red(f"  {issues} issue(s), {warnings} warning(s)"))
+        print(dim("  Fix issues and run 'code-agents doctor' again"))
     print()
 
 
