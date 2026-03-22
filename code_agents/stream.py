@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import copy
 import json
 import logging
+import os
 import time
 import uuid
 from typing import Any, Optional
@@ -92,6 +94,13 @@ async def stream_response(agent: AgentConfig, req: CompletionRequest):
     created = int(time.time())
     model = req.model or agent.model
     prompt = last_user_message(req.messages)
+
+    # Inject rules into agent system prompt (fresh from disk every request)
+    from .rules_loader import load_rules
+    rules_text = load_rules(agent.name, req.cwd or os.getenv("TARGET_REPO_PATH"))
+    if rules_text:
+        agent = copy.copy(agent)
+        agent.system_prompt = f"{rules_text}\n\n{agent.system_prompt or ''}"
 
     show_tools = req.stream_tool_activity if req.stream_tool_activity is not None else agent.stream_tool_activity
     show_session = req.include_session if req.include_session is not None else agent.include_session
@@ -227,6 +236,13 @@ async def collect_response(agent: AgentConfig, req: CompletionRequest) -> dict:
     created = int(time.time())
     model = req.model or agent.model
     prompt = last_user_message(req.messages)
+
+    # Inject rules into agent system prompt (fresh from disk every request)
+    from .rules_loader import load_rules
+    rules_text = load_rules(agent.name, req.cwd or os.getenv("TARGET_REPO_PATH"))
+    if rules_text:
+        agent = copy.copy(agent)
+        agent.system_prompt = f"{rules_text}\n\n{agent.system_prompt or ''}"
 
     show_tools = req.stream_tool_activity if req.stream_tool_activity is not None else agent.stream_tool_activity
     show_session = req.include_session if req.include_session is not None else agent.include_session

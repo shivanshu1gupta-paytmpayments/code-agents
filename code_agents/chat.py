@@ -442,6 +442,7 @@ def _handle_command(cmd: str, state: dict, url: str) -> Optional[str]:
         print(f"    {cyan('/agent <name>'):<16} Switch to another agent permanently")
         print(f"    {cyan('/agents'):<16} List all available agents")
         print(f"    {cyan('/run <cmd>'):<16} Run a shell command in the repo directory")
+        print(f"    {cyan('/rules'):<16} Show active rules for current agent")
         print(f"    {cyan('/session'):<16} Show current session ID")
         print(f"    {cyan('/clear'):<16} Clear session (fresh start, same agent)")
         print(f"    {cyan('/help'):<16} Show this help")
@@ -502,6 +503,25 @@ def _handle_command(cmd: str, state: dict, url: str) -> Optional[str]:
     elif command == "/clear":
         state["session_id"] = None
         print(green("  ✓ Session cleared. Next message starts fresh."))
+
+    elif command == "/rules":
+        from .rules_loader import list_rules
+        repo = state.get("repo_path", ".")
+        agent = state.get("agent", "")
+        rules = list_rules(agent_name=agent, repo_path=repo)
+        print()
+        if not rules:
+            print(dim(f"  No rules active for {bold(agent)}."))
+            print(dim(f"  Create one: code-agents rules create --agent {agent}"))
+        else:
+            print(bold(f"  Rules for {cyan(agent)}:"))
+            for r in rules:
+                scope_label = green("global") if r["scope"] == "global" else cyan("project")
+                target_label = "all agents" if r["target"] == "_global" else r["target"]
+                print(f"    [{scope_label}] {bold(target_label)}")
+                print(f"      {dim(r['preview'])}")
+                print(f"      {dim(r['path'])}")
+        print()
 
     else:
         print(yellow(f"  Unknown command: {command}"))
@@ -668,7 +688,7 @@ def chat_main(args: list[str] | None = None):
     }
 
     # Tab-completion for slash commands and agent names
-    _slash_commands = ["/help", "/quit", "/exit", "/agents", "/agent", "/run", "/session", "/clear"]
+    _slash_commands = ["/help", "/quit", "/exit", "/agents", "/agent", "/run", "/rules", "/session", "/clear"]
     _completer = _make_completer(_slash_commands, list(agents.keys()))
     _has_readline = False
 
@@ -744,9 +764,13 @@ def chat_main(args: list[str] | None = None):
                     role = AGENT_ROLES.get(delegate_agent, "")
                     print(dim(f"\n  Delegating to {bold(cyan(delegate_agent))}: {dim(role)}"))
 
-                    # Build messages with repo context
+                    # Build messages with repo context + rules
                     repo = state.get("repo_path", cwd)
                     repo_name = os.path.basename(repo)
+
+                    from .rules_loader import load_rules as _load_rules
+                    delegate_rules = _load_rules(delegate_agent, repo)
+
                     system_context = (
                         f"IMPORTANT: You are working on the project at: {repo}\n"
                         f"Project name: {repo_name}\n"
@@ -756,6 +780,8 @@ def chat_main(args: list[str] | None = None):
                         f"When reading files, searching code, or explaining architecture — "
                         f"always operate within {repo}."
                     )
+                    if delegate_rules:
+                        system_context += f"\n\n--- Rules ---\n{delegate_rules}\n--- End Rules ---"
                     delegate_messages = [
                         {"role": "system", "content": system_context},
                         {"role": "user", "content": delegate_prompt},
@@ -812,9 +838,15 @@ def chat_main(args: list[str] | None = None):
                     break
                 continue
 
-            # Build messages — inject repo context so the agent knows which project to work on
+            # Build messages — inject repo context + rules
             repo = state.get("repo_path", cwd)
             repo_name = os.path.basename(repo)
+            current_agent = state["agent"]
+
+            # Load rules fresh from disk (auto-refresh on every message)
+            from .rules_loader import load_rules as _load_rules
+            rules_text = _load_rules(current_agent, repo)
+
             system_context = (
                 f"IMPORTANT: You are working on the project at: {repo}\n"
                 f"Project name: {repo_name}\n"
@@ -824,6 +856,8 @@ def chat_main(args: list[str] | None = None):
                 f"When reading files, searching code, or explaining architecture — "
                 f"always operate within {repo}."
             )
+            if rules_text:
+                system_context += f"\n\n--- Rules ---\n{rules_text}\n--- End Rules ---"
             messages = [
                 {"role": "system", "content": system_context},
                 {"role": "user", "content": user_input},

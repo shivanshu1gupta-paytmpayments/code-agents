@@ -162,6 +162,111 @@ def cmd_init():
         print()
 
 
+def cmd_rules(rest: list[str] | None = None):
+    """Manage rules files (list, create, edit, delete)."""
+    import subprocess as _sp
+    rest = rest or []
+    bold, green, yellow, red, cyan, dim = _colors()
+    _load_env()
+    cwd = _user_cwd()
+
+    subcmd = rest[0] if rest else "list"
+
+    if subcmd == "list":
+        agent_name = None
+        for i, arg in enumerate(rest):
+            if arg == "--agent" and i + 1 < len(rest):
+                agent_name = rest[i + 1]
+
+        from .rules_loader import list_rules
+        rules = list_rules(agent_name=agent_name, repo_path=cwd)
+        print()
+        if not rules:
+            print(dim("  No rules found."))
+            print()
+            print(f"  Create one:")
+            print(f"    code-agents rules create                  {dim('# project rule, all agents')}")
+            print(f"    code-agents rules create --agent code-writer  {dim('# project rule, specific agent')}")
+            print(f"    code-agents rules create --global         {dim('# global rule, all agents')}")
+        else:
+            print(bold("  Active Rules:"))
+            print()
+            for r in rules:
+                scope_label = green("global") if r["scope"] == "global" else cyan("project")
+                target_label = "all agents" if r["target"] == "_global" else r["target"]
+                print(f"    [{scope_label}] {bold(target_label)}")
+                print(f"      {dim(r['preview'])}")
+                print(f"      {dim(r['path'])}")
+                print()
+        print()
+
+    elif subcmd == "create":
+        is_global = "--global" in rest
+        agent_name = None
+        for i, arg in enumerate(rest):
+            if arg == "--agent" and i + 1 < len(rest):
+                agent_name = rest[i + 1]
+
+        if is_global:
+            from .rules_loader import GLOBAL_RULES_DIR
+            rules_dir = GLOBAL_RULES_DIR
+        else:
+            rules_dir = Path(cwd) / ".code-agents" / "rules"
+
+        filename = f"{agent_name}.md" if agent_name else "_global.md"
+        filepath = rules_dir / filename
+
+        rules_dir.mkdir(parents=True, exist_ok=True)
+        if not filepath.exists():
+            target_desc = agent_name or "all agents"
+            scope_desc = "global" if is_global else "project"
+            filepath.write_text(
+                f"# Rules for {target_desc} ({scope_desc})\n\n"
+                f"<!-- Write your rules below. These will be injected into the agent's system prompt. -->\n\n"
+            )
+            print(green(f"  ✓ Created: {filepath}"))
+        else:
+            print(dim(f"  File exists: {filepath}"))
+
+        editor = os.environ.get("EDITOR", "vi")
+        print(dim(f"  Opening in {editor}..."))
+        _sp.run([editor, str(filepath)])
+
+    elif subcmd == "edit":
+        if len(rest) < 2:
+            print(yellow("  Usage: code-agents rules edit <path>"))
+            return
+        filepath = rest[1]
+        if not os.path.isfile(filepath):
+            print(red(f"  File not found: {filepath}"))
+            return
+        editor = os.environ.get("EDITOR", "vi")
+        _sp.run([editor, filepath])
+
+    elif subcmd == "delete":
+        if len(rest) < 2:
+            print(yellow("  Usage: code-agents rules delete <path>"))
+            return
+        filepath = rest[1]
+        if not os.path.isfile(filepath):
+            print(red(f"  File not found: {filepath}"))
+            return
+        try:
+            answer = input(f"  Delete {filepath}? [y/N]: ").strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            print()
+            return
+        if answer in ("y", "yes"):
+            os.remove(filepath)
+            print(green(f"  ✓ Deleted: {filepath}"))
+        else:
+            print(dim("  Cancelled."))
+
+    else:
+        print(yellow(f"  Unknown subcommand: {subcmd}"))
+        print(f"  Usage: code-agents rules [list|create|edit|delete]")
+
+
 def cmd_migrate():
     """Migrate legacy .env to centralized config."""
     bold, green, yellow, red, cyan, dim = _colors()
@@ -1606,6 +1711,7 @@ def _curls_for_agent(agent_name: str, url: str):
 COMMANDS = {
     "init":      ("Initialize code-agents in current repo",        cmd_init),
     "migrate":   ("Migrate legacy .env to centralized config",     cmd_migrate),
+    "rules":     ("Manage rules [list|create|edit|delete]",        None),  # special handling
     "start":     ("Start the server",                               cmd_start),
     "chat":      ("Interactive chat with agents",                   None),  # special handling
     "shutdown":  ("Shutdown the server",                              cmd_shutdown),
@@ -1654,6 +1760,19 @@ def cmd_help():
     p(f"      Splits variables: API keys → global, Jenkins/ArgoCD → per-repo.")
     p(f"      Backs up the original .env file.")
     p(f"      {dim('$ code-agents migrate')}")
+    p()
+    p(f"    {cyan('rules')} {dim('[list|create|edit|delete]')}")
+    p(f"      Manage agent rules — persistent instructions injected into prompts.")
+    p(f"      Rules auto-refresh: edit a file mid-chat and the next message picks it up.")
+    p(f"        {dim('list')}                 List active rules (default)")
+    p(f"        {dim('list --agent X')}       List rules for a specific agent")
+    p(f"        {dim('create')}               Create project rule for all agents")
+    p(f"        {dim('create --agent X')}     Create project rule for specific agent")
+    p(f"        {dim('create --global')}      Create global rule for all agents")
+    p(f"        {dim('edit <path>')}          Edit a rule file in $EDITOR")
+    p(f"        {dim('delete <path>')}        Delete a rule file")
+    p(f"      {dim('$ code-agents rules')}")
+    p(f"      {dim('$ code-agents rules create --agent code-writer')}")
     p()
     p(f"    {cyan('start')} {dim('[--fg]')}")
     p(f"      Start the server in background. Loads global + per-repo config.")
@@ -1887,6 +2006,10 @@ def main():
         elif command == "setup":
             from .setup import main as setup_main
             setup_main()
+        elif command == "migrate":
+            cmd_migrate()
+        elif command == "rules":
+            cmd_rules(rest)
         else:
             print(f"  Unknown command: {command}")
             print(f"  Run 'code-agents help' for usage.")
