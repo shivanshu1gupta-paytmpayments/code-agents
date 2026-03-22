@@ -9,6 +9,7 @@ import pytest
 from code_agents.chat import (
     AGENT_ROLES,
     _check_server,
+    _extract_commands,
     _get_agents,
     _handle_command,
     _make_completer,
@@ -520,3 +521,70 @@ class TestTabCompletion:
             assert len(results) == 5  # all 5 agents in AGENT_NAMES
             assert "code-reasoning" in results
             assert "git-ops" in results
+
+
+class TestExtractCommands:
+    """Test shell command extraction from agent responses."""
+
+    def test_extract_bash_block(self):
+        text = "Here's how to check:\n```bash\ngit status\ngit log --oneline -5\n```\nThat's it."
+        cmds = _extract_commands(text)
+        assert cmds == ["git status", "git log --oneline -5"]
+
+    def test_extract_sh_block(self):
+        text = "Run this:\n```sh\npython3 -m pytest\n```"
+        cmds = _extract_commands(text)
+        assert cmds == ["python3 -m pytest"]
+
+    def test_extract_shell_block(self):
+        text = "```shell\nnpm install\nnpm test\n```"
+        cmds = _extract_commands(text)
+        assert cmds == ["npm install", "npm test"]
+
+    def test_extract_zsh_block(self):
+        text = "```zsh\nbrew install python\n```"
+        cmds = _extract_commands(text)
+        assert cmds == ["brew install python"]
+
+    def test_strips_dollar_prompt(self):
+        text = "```bash\n$ git status\n$ git diff\n```"
+        cmds = _extract_commands(text)
+        assert cmds == ["git status", "git diff"]
+
+    def test_strips_arrow_prompt(self):
+        text = "```bash\n> echo hello\n```"
+        cmds = _extract_commands(text)
+        assert cmds == ["echo hello"]
+
+    def test_skips_comments(self):
+        text = "```bash\n# This is a comment\ngit status\n# Another comment\ngit log\n```"
+        cmds = _extract_commands(text)
+        assert cmds == ["git status", "git log"]
+
+    def test_skips_empty_lines(self):
+        text = "```bash\n\ngit status\n\n\ngit log\n\n```"
+        cmds = _extract_commands(text)
+        assert cmds == ["git status", "git log"]
+
+    def test_no_code_blocks(self):
+        text = "Just run git status in your terminal."
+        cmds = _extract_commands(text)
+        assert cmds == []
+
+    def test_non_shell_code_block_ignored(self):
+        text = "```python\nimport os\nprint('hello')\n```"
+        cmds = _extract_commands(text)
+        assert cmds == []
+
+    def test_multiple_code_blocks(self):
+        text = "First:\n```bash\ngit add .\n```\nThen:\n```bash\ngit commit -m 'fix'\n```"
+        cmds = _extract_commands(text)
+        assert cmds == ["git add .", "git commit -m 'fix'"]
+
+    def test_console_block(self):
+        text = "```console\ncurl http://localhost:8000/health\n```"
+        cmds = _extract_commands(text)
+        assert cmds == ["curl http://localhost:8000/health"]
+
+    def test_empty_text(self):
+        assert _extract_commands("") == []
