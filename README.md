@@ -2,7 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
-[![Tests: 178 passing](https://img.shields.io/badge/tests-178%20passing-brightgreen.svg)]()
+[![Tests: 199 passing](https://img.shields.io/badge/tests-199%20passing-brightgreen.svg)]()
 
 AI-powered code agent platform with interactive chat and a built-in CI/CD pipeline. Define agents in YAML, chat with them from the terminal, and automate: **review → test → build → deploy → verify → rollback**.
 
@@ -61,10 +61,11 @@ $ code-agents chat
 - **Agent switching** — `/agent code-writer` switches permanently
 - **Inline delegation** — `/<agent> <prompt>` sends a one-shot to another agent, then returns to your current agent
 - **Tab-completion** — press Tab after `/` to autocomplete slash commands and agent names
-- **Command execution** — agent suggests a shell command? Press `y` to run it right from chat, with JSON pretty-printing
+- **Command execution** — agent suggests a shell command? Press `y` to run it right from chat, with JSON pretty-printing and agentic feedback loop
+- **`/exec`** — run any command and auto-feed output to agent for analysis
 - **Agent rules** — persistent instructions per-agent or global, auto-refresh mid-chat
 
-Chat commands: `/help /quit /agents /agent <name> /rules /run <cmd> /session /clear /<agent> <prompt>`
+Chat commands: `/help /quit /agents /agent <name> /rules /run <cmd> /exec <cmd> /restart /session /clear /<agent> <prompt>`
 
 ## CLI Commands
 
@@ -225,7 +226,7 @@ Full list: `.env.example`
 ## Testing
 
 ```bash
-poetry run pytest       # 178 tests
+poetry run pytest       # 199 tests
 code-agents doctor      # diagnose setup
 code-agents test        # run tests on target repo
 ```
@@ -282,7 +283,7 @@ code-agents/
       completions.py  agents_list.py  git_ops.py  testing.py
       jenkins.py  argocd.py  pipeline.py  redash.py
       elasticsearch.py  atlassian_oauth_web.py
-  tests/                        # 178 tests
+  tests/                        # 199 tests
     test_chat.py                #   Chat REPL, slash commands, agent parsing, SSE, delegation, tab-completion
     test_cli.py                 #   CLI commands, help, config, curls, dispatcher
     test_git_client.py          #   Git operations (real temp repos)

@@ -402,7 +402,7 @@ $ code-agents chat
   code-tester › Creating tests...
 ```
 
-Chat commands: `/help /quit /agent <name> /agents /rules /run <cmd> /session /clear /<agent> <prompt>`
+Chat commands: `/help /quit /agent <name> /agents /rules /run <cmd> /exec <cmd> /restart /session /clear /<agent> <prompt>`
 
 The agent automatically works on **your current project** (detects git repo from cwd).
 If the server isn't running, chat offers to start it for you.
@@ -469,7 +469,7 @@ When you add a new agent, workflow, or integration to the project:
 8. **Add tests** in `tests/` for any new functionality
 
 Run `poetry run python initiater/run_audit.py --rules workflow` to verify sync.
-Run `poetry run pytest` to verify all 178 tests pass.
+Run `poetry run pytest` to verify all 199 tests pass.
 
 ### Key files that reference agent lists
 - `agents/agent_router.yaml` — system prompt lists all specialists
