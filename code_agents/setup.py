@@ -315,42 +315,59 @@ def prompt_cicd_pipeline() -> dict[str, str]:
 
     # Jenkins
     if prompt_yes_no("Configure Jenkins?", default=False):
+        print(dim("    Hint: Jenkins base URL without job path"))
+        print(dim("    Example: https://jenkins.company.com/"))
         env["JENKINS_URL"] = prompt(
             "JENKINS_URL",
             required=True,
             validator=validate_url,
             error_msg="Must be a valid URL.",
         )
+        print(dim("    Hint: Jenkins user with API token access"))
         env["JENKINS_USERNAME"] = prompt("JENKINS_USERNAME", required=True)
+        print(dim("    Hint: Manage Jenkins → Users → Configure → API Token"))
         env["JENKINS_API_TOKEN"] = prompt("JENKINS_API_TOKEN", secret=True, required=True)
+        print()
+        print(dim("    Hint: Use the folder path from your Jenkins URL, separated by /"))
+        print(dim("    Example: If your Jenkins URL is:"))
+        print(dim("      https://jenkins.company.com/job/pg2/job/pg2-dev-build-jobs/job/pg2-dev-my-service/"))
+        print(dim("    Then the job path is: pg2/pg2-dev-build-jobs/pg2-dev-my-service"))
+        print()
         env["JENKINS_BUILD_JOB"] = prompt(
-            "JENKINS_BUILD_JOB (job path, not full URL)",
+            "JENKINS_BUILD_JOB",
             required=True,
             validator=validate_job_path,
-            error_msg="Enter a job path like 'pg2/pg2-dev-build-jobs', not a full URL.",
+            error_msg="Enter a job path like 'pg2/pg2-dev-build-jobs/my-service', not a full URL.",
         )
+        print(dim("    Hint: Deploy job path (same as build job if same pipeline, or blank to skip)"))
         env["JENKINS_DEPLOY_JOB"] = prompt(
-            "JENKINS_DEPLOY_JOB (job path, not full URL)",
+            "JENKINS_DEPLOY_JOB",
             validator=validate_job_path,
             error_msg="Enter a job path, not a full URL.",
         )
 
     # ArgoCD
     if prompt_yes_no("Configure ArgoCD?", default=False):
+        print(dim("    Hint: ArgoCD server URL (e.g. https://argocd.company.com)"))
         env["ARGOCD_URL"] = prompt(
             "ARGOCD_URL",
             required=True,
             validator=validate_url,
             error_msg="Must be a valid URL.",
         )
+        print(dim("    Hint: Generate via: argocd account generate-token"))
         env["ARGOCD_AUTH_TOKEN"] = prompt("ARGOCD_AUTH_TOKEN", secret=True, required=True)
+        print(dim("    Hint: Must match the app name in ArgoCD UI exactly"))
         env["ARGOCD_APP_NAME"] = prompt("ARGOCD_APP_NAME", required=True)
 
     # Testing overrides
     if prompt_yes_no("Configure testing overrides?", default=False):
+        print(dim("    Hint: Shell command to run tests. Leave blank to auto-detect (pytest/jest/maven/go)"))
+        print(dim("    Example: pytest --cov --cov-report=xml:coverage.xml"))
         cmd = prompt("TARGET_TEST_COMMAND (blank for auto-detect)")
         if cmd:
             env["TARGET_TEST_COMMAND"] = cmd
+        print(dim("    Hint: Minimum coverage % required (default: 100)"))
         threshold = prompt("TARGET_COVERAGE_THRESHOLD", default="100")
         if threshold != "100":
             env["TARGET_COVERAGE_THRESHOLD"] = threshold

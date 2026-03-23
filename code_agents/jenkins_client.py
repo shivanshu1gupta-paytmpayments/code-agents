@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import time
 from typing import Any, Optional
 
@@ -68,6 +69,89 @@ class JenkinsClient:
         self._crumb = {}
         return self._crumb
 
+    def _job_path(self, job_name: str) -> str:
+        """Convert a slash-separated job name to Jenkins API path."""
+        return "/job/" + "/job/".join(job_name.split("/"))
+
+    async def list_jobs(self, folder_name: str | None = None) -> list[dict]:
+        """
+        List jobs in a folder (or root if folder_name is None).
+
+        Returns list of dicts: [{name, url, color, fullName, type}]
+        """
+        async with self._client() as client:
+            if folder_name:
+                path = self._job_path(folder_name) + "/api/json"
+            else:
+                path = "/api/json"
+
+            r = await client.get(
+                path,
+                params={"tree": "jobs[name,url,color,fullName,_class]"},
+            )
+            if r.status_code != 200:
+                raise JenkinsError(
+                    f"Failed to list jobs: HTTP {r.status_code}",
+                    status_code=r.status_code,
+                    response_text=r.text[:500],
+                )
+            data = r.json()
+            jobs = data.get("jobs", [])
+            result = []
+            for job in jobs:
+                cls = job.get("_class", "")
+                if "Folder" in cls or "OrganizationFolder" in cls:
+                    job_type = "folder"
+                elif "WorkflowJob" in cls or "FreeStyleProject" in cls:
+                    job_type = "job"
+                else:
+                    job_type = "other"
+                result.append({
+                    "name": job.get("name", ""),
+                    "full_name": job.get("fullName", job.get("name", "")),
+                    "url": job.get("url", ""),
+                    "color": job.get("color", ""),
+                    "type": job_type,
+                })
+            return result
+
+    async def get_job_parameters(self, job_name: str) -> list[dict]:
+        """
+        Fetch the parameter definitions for a parameterized job.
+
+        Returns list of dicts: [{name, type, default, description, choices}]
+        """
+        job_path = self._job_path(job_name)
+        async with self._client() as client:
+            r = await client.get(
+                f"{job_path}/api/json",
+                params={"tree": "property[parameterDefinitions[name,type,defaultParameterValue[value],description,choices]]"},
+            )
+            if r.status_code != 200:
+                raise JenkinsError(
+                    f"Failed to get job parameters: HTTP {r.status_code}",
+                    status_code=r.status_code,
+                    response_text=r.text[:500],
+                )
+            data = r.json()
+
+            params = []
+            for prop in data.get("property", []):
+                for pd in prop.get("parameterDefinitions", []):
+                    param = {
+                        "name": pd.get("name", ""),
+                        "type": pd.get("type", "").replace("ParameterDefinition", ""),
+                        "description": pd.get("description", ""),
+                    }
+                    default = pd.get("defaultParameterValue", {})
+                    if default:
+                        param["default"] = default.get("value", "")
+                    choices = pd.get("choices")
+                    if choices:
+                        param["choices"] = choices
+                    params.append(param)
+            return params
+
     async def trigger_build(
         self,
         job_name: str,
@@ -82,8 +166,7 @@ class JenkinsClient:
             crumb = await self._get_crumb(client)
             headers = dict(crumb) if crumb else {}
 
-            # URL-encode job name for folder paths (e.g., "folder/job")
-            job_path = "/job/" + "/job/".join(job_name.split("/"))
+            job_path = self._job_path(job_name)
 
             if parameters:
                 url = f"{job_path}/buildWithParameters"
@@ -140,7 +223,7 @@ class JenkinsClient:
 
     async def get_build_status(self, job_name: str, build_number: int) -> dict:
         """Get build status and details."""
-        job_path = "/job/" + "/job/".join(job_name.split("/"))
+        job_path = self._job_path(job_name)
         async with self._client() as client:
             r = await client.get(f"{job_path}/{build_number}/api/json")
             if r.status_code != 200:
@@ -164,7 +247,7 @@ class JenkinsClient:
 
     async def get_build_log(self, job_name: str, build_number: int) -> str:
         """Get console output for a build."""
-        job_path = "/job/" + "/job/".join(job_name.split("/"))
+        job_path = self._job_path(job_name)
         async with self._client() as client:
             r = await client.get(f"{job_path}/{build_number}/consoleText")
             if r.status_code != 200:
@@ -182,7 +265,7 @@ class JenkinsClient:
 
     async def get_last_build(self, job_name: str) -> dict:
         """Get info about the last build of a job."""
-        job_path = "/job/" + "/job/".join(job_name.split("/"))
+        job_path = self._job_path(job_name)
         async with self._client() as client:
             r = await client.get(f"{job_path}/lastBuild/api/json")
             if r.status_code != 200:
@@ -222,3 +305,85 @@ class JenkinsClient:
         raise JenkinsError(
             f"Build {job_name} #{build_number} did not complete within {self.poll_timeout}s"
         )
+
+    @staticmethod
+    def extract_build_version(log_text: str) -> Optional[str]:
+        """
+        Extract build/artifact version from Jenkins console output.
+
+        Scans for common patterns:
+          - Docker tag: image:1.2.3-42, image:v1.2.3
+          - Maven/Gradle: BUILD_VERSION=1.2.3, version=1.2.3-SNAPSHOT
+          - Generic: build tag: 42, Build #42 SUCCESS
+          - Artifact upload lines containing version numbers
+        """
+        patterns = [
+            # Docker image tag: repo/image:version
+            r"(?:image|tag|pushing|pushed|built)[:\s]+\S+:([v]?[\d]+[\d._-]+\S*)",
+            # BUILD_VERSION=xxx or version=xxx
+            r"(?:BUILD_VERSION|ARTIFACT_VERSION|version|VERSION)\s*[=:]\s*([v]?[\d]+[\w._-]*)",
+            # Build tag: NNN or Build #NNN
+            r"(?:build\s*(?:tag|number|no|#))\s*[=:#]?\s*(\d+)",
+            # Uploading artifact-1.2.3.jar
+            r"(?:upload|deploy|publish)\S*\s+\S*?-(\d+[\d._-]+\S*?)(?:\.jar|\.war|\.zip|\.tar)",
+            # Image digest or version in last 50 lines (most specific results at end)
+            r"(?:Successfully built|digest:)\s+\S*?([v]?[\d]+[\d._-]+\S*)",
+        ]
+
+        # Search last 200 lines (build version usually near the end)
+        lines = log_text.strip().splitlines()[-200:]
+        text = "\n".join(lines)
+
+        for pattern in patterns:
+            matches = re.findall(pattern, text, re.IGNORECASE)
+            if matches:
+                return matches[-1]  # Last match is usually the final version
+
+        return None
+
+    async def trigger_and_wait(
+        self,
+        job_name: str,
+        parameters: Optional[dict[str, Any]] = None,
+    ) -> dict:
+        """
+        Trigger a build, poll until complete, extract build version from logs.
+
+        Returns full result dict with: job_name, build_number, result, duration,
+        build_version (extracted from console output), log_tail (last 30 lines).
+        """
+        # 1. Trigger
+        trigger_result = await self.trigger_build(job_name, parameters)
+        build_number = trigger_result.get("build_number")
+
+        # If no build number from queue, wait and check
+        if not build_number and trigger_result.get("queue_id"):
+            build_number = await self.get_build_from_queue(trigger_result["queue_id"])
+
+        if not build_number:
+            return {
+                **trigger_result,
+                "error": "Could not determine build number from queue",
+            }
+
+        # 2. Poll until complete
+        logger.info("trigger_and_wait: polling %s #%d", job_name, build_number)
+        final_status = await self.wait_for_build(job_name, build_number)
+
+        # 3. Extract build version from logs
+        build_version = None
+        log_tail = ""
+        try:
+            log_text = await self.get_build_log(job_name, build_number)
+            build_version = self.extract_build_version(log_text)
+            # Keep last 30 lines for summary
+            log_lines = log_text.strip().splitlines()
+            log_tail = "\n".join(log_lines[-30:])
+        except JenkinsError:
+            pass
+
+        return {
+            **final_status,
+            "build_version": build_version,
+            "log_tail": log_tail,
+        }

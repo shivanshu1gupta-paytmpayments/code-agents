@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 from pathlib import Path
 from typing import Optional
@@ -240,6 +241,14 @@ AGENT_WELCOME = {
 }
 
 
+_ANSI_STRIP_RE = re.compile(r"\033\[[0-9;]*m")
+
+
+def _visible_len(text: str) -> int:
+    """Return the visible length of a string, ignoring ANSI escape codes."""
+    return len(_ANSI_STRIP_RE.sub("", text))
+
+
 def _print_welcome(agent_name: str) -> None:
     """Print agent welcome message in a red bordered box."""
     import shutil
@@ -254,12 +263,14 @@ def _print_welcome(agent_name: str) -> None:
     inner = box_width - 2
 
     def _pad(text: str) -> str:
-        visible_len = len(text)
-        pad = max(0, inner - visible_len - 1)
+        vis = _visible_len(text)
+        pad = max(0, inner - vis - 1)
         return red("  │") + f" {text}{' ' * pad}" + red("│")
 
     print(red(f"  ┌{'─' * box_width}┐"))
-    print(red(f"  │") + f" {bold(cyan(title))}" + " " * max(0, inner - len(title) - 1) + red("│"))
+    title_styled = f" {bold(cyan(title))}"
+    title_pad = max(0, inner - len(title) - 1)
+    print(red(f"  │") + title_styled + " " * title_pad + red("│"))
     print(red(f"  ├{'─' * box_width}┤"))
     print(_pad(""))
     print(_pad(bold("What I can do:")))
@@ -463,8 +474,6 @@ def _stream_chat(
 # ---------------------------------------------------------------------------
 # Command extraction and execution
 # ---------------------------------------------------------------------------
-
-import re
 
 _CODE_BLOCK_RE = re.compile(
     r"```(?:bash|sh|shell|zsh|console)\s*\n(.*?)```",
@@ -774,11 +783,11 @@ def _handle_command(cmd: str, state: dict, url: str) -> Optional[str]:
     Handle a slash command. Returns None to continue, or "quit" to exit.
     Modifies state dict in-place.
     """
-    parts = cmd.strip().split(None, 1)
+    parts = cmd.strip().rstrip(";").strip().split(None, 1)
     command = parts[0].lower()
     arg = parts[1].strip() if len(parts) > 1 else ""
 
-    if command in ("/quit", "/exit", "/q"):
+    if command in ("/quit", "/exit", "/q", "/bye"):
         return "quit"
 
     elif command == "/restart":
