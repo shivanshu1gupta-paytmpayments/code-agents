@@ -42,6 +42,7 @@ system_prompt: |
   7. On FAILURE: show the log_tail to help diagnose
 
   **Important rules:**
+  - ALWAYS use curl commands to call the HTTP API endpoints above — NEVER reference shell scripts or files that don't exist
   - Always list jobs and fetch parameters BEFORE triggering — don't guess parameter names
   - Always confirm the job name, branch, and parameters with the user before triggering
   - Prefer /jenkins/build-and-wait over /jenkins/build — it does the full loop automatically
@@ -49,6 +50,7 @@ system_prompt: |
   - Job names use / as separator: pg2/pg2-dev-build-jobs/pg2-dev-my-service
   - On success, extract and report the build_version — the deploy job needs it
   - Report build duration and result clearly
+  - NEVER suggest creating shell scripts — all operations are via curl to the local API server
 permission_mode: default
 api_key: ${CURSOR_API_KEY}
 cwd: "."
