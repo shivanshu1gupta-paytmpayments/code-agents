@@ -837,12 +837,29 @@ def _handle_command(cmd: str, state: dict, url: str) -> Optional[str]:
         print()
 
     elif command == "/run":
-        # Manual run: /run <command>
+        # Manual run: /run <command> — run only, no agent feedback
         if not arg:
             print(yellow("  Usage: /run <shell command>"))
             return None
         _run_single_command(arg, state.get("repo_path", "."))
         return None
+
+    elif command == "/execute" or command == "/exec":
+        # Execute + feed output to agent: /execute <command>
+        if not arg:
+            print(yellow("  Usage: /execute <shell command>"))
+            print(dim("  Runs the command and sends output to the agent for analysis."))
+            return None
+        resolved = _resolve_placeholders(arg)
+        if not resolved:
+            return None
+        output = _run_single_command(resolved, state.get("repo_path", "."))
+        # Return special signal for REPL to feed back to agent
+        state["_exec_feedback"] = {
+            "command": resolved,
+            "output": output,
+        }
+        return "exec_feedback"
 
     elif command == "/help":
         print()
@@ -851,6 +868,7 @@ def _handle_command(cmd: str, state: dict, url: str) -> Optional[str]:
         print(f"    {cyan('/agent <name>'):<16} Switch to another agent permanently")
         print(f"    {cyan('/agents'):<16} List all available agents")
         print(f"    {cyan('/run <cmd>'):<16} Run a shell command in the repo directory")
+        print(f"    {cyan('/exec <cmd>'):<16} Run command and send output to agent for analysis")
         print(f"    {cyan('/restart'):<16} Restart the server")
         print(f"    {cyan('/rules'):<16} Show active rules for current agent")
         print(f"    {cyan('/session'):<16} Show current session ID")
@@ -1098,7 +1116,7 @@ def chat_main(args: list[str] | None = None):
     }
 
     # Tab-completion for slash commands and agent names
-    _slash_commands = ["/help", "/quit", "/exit", "/agents", "/agent", "/run", "/restart", "/rules", "/session", "/clear"]
+    _slash_commands = ["/help", "/quit", "/exit", "/agents", "/agent", "/run", "/exec", "/execute", "/restart", "/rules", "/session", "/clear"]
     _completer = _make_completer(_slash_commands, list(agents.keys()))
     _has_readline = False
 
@@ -1249,6 +1267,63 @@ def chat_main(args: list[str] | None = None):
                     print(dim("  Chat ended."))
                     print()
                     break
+                elif result == "exec_feedback":
+                    # /execute ran a command — feed output to agent
+                    fb = state.pop("_exec_feedback", None)
+                    if fb:
+                        repo = state.get("repo_path", cwd)
+                        repo_name = os.path.basename(repo)
+                        current_agent = state["agent"]
+
+                        from .rules_loader import load_rules as _load_rules
+                        rules_text = _load_rules(current_agent, repo)
+
+                        system_context = (
+                            f"IMPORTANT: You are working on the project at: {repo}\n"
+                            f"Project name: {repo_name}\n"
+                            f"This is the user's repository — all your analysis, code reading, "
+                            f"file operations, and responses must be about THIS project's files. "
+                            f"Do NOT describe the code-agents tool itself.\n"
+                            f"When reading files, searching code, or explaining architecture — "
+                            f"always operate within {repo}."
+                        )
+                        if rules_text:
+                            system_context += f"\n\n--- Rules ---\n{rules_text}\n--- End Rules ---"
+
+                        output_preview = fb["output"][:3000] if fb["output"] else "(no output)"
+                        feedback = (
+                            f"I ran this command:\n{fb['command']}\n\n"
+                            f"Output:\n{output_preview}\n\n"
+                            f"Please analyze the output and suggest next steps."
+                        )
+
+                        print(dim("  Feeding output to agent..."))
+                        print()
+
+                        agent_label = bold(magenta(current_agent))
+                        sys.stdout.write(f"  {agent_label} › ")
+                        sys.stdout.flush()
+
+                        for piece_type, piece_content in _stream_chat(
+                            url, current_agent,
+                            [{"role": "system", "content": system_context},
+                             {"role": "user", "content": feedback}],
+                            state.get("session_id"),
+                            cwd=state.get("repo_path"),
+                        ):
+                            if piece_type == "text":
+                                sys.stdout.write(piece_content)
+                                sys.stdout.flush()
+                            elif piece_type == "reasoning":
+                                sys.stdout.write(f"\n    {dim(piece_content.strip())}")
+                                sys.stdout.flush()
+                            elif piece_type == "session_id":
+                                state["session_id"] = piece_content
+                            elif piece_type == "error":
+                                print(red(f"\n  Error: {piece_content}"))
+
+                        print()
+                        print()
                 continue
 
             # Build messages — inject repo context + rules
