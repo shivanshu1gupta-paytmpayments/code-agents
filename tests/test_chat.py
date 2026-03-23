@@ -8,12 +8,14 @@ import pytest
 
 from code_agents.chat import (
     AGENT_ROLES,
+    AGENT_WELCOME,
     _check_server,
     _extract_commands,
     _get_agents,
     _handle_command,
     _make_completer,
     _parse_inline_delegation,
+    _print_welcome,
     _resolve_placeholders,
 )
 
@@ -33,6 +35,40 @@ class TestAgentRoles:
 
     def test_role_count(self):
         assert len(AGENT_ROLES) == 12
+
+
+class TestAgentWelcome:
+    """Verify all 12 agents have welcome messages."""
+
+    def test_all_agents_have_welcome(self):
+        for agent in AGENT_ROLES:
+            assert agent in AGENT_WELCOME, f"Missing welcome for {agent}"
+
+    def test_welcome_count(self):
+        assert len(AGENT_WELCOME) == 12
+
+    def test_welcome_structure(self):
+        """Each welcome is a tuple of (title, capabilities, examples)."""
+        for agent, welcome in AGENT_WELCOME.items():
+            assert isinstance(welcome, tuple), f"{agent}: welcome should be tuple"
+            assert len(welcome) == 3, f"{agent}: welcome should have 3 elements"
+            title, caps, examples = welcome
+            assert isinstance(title, str) and len(title) > 5, f"{agent}: title too short"
+            assert isinstance(caps, list) and len(caps) >= 2, f"{agent}: needs at least 2 capabilities"
+            assert isinstance(examples, list) and len(examples) >= 2, f"{agent}: needs at least 2 examples"
+
+    def test_print_welcome_renders(self, capsys):
+        """_print_welcome should output the box."""
+        _print_welcome("code-tester")
+        output = capsys.readouterr().out
+        assert "code-tester" in output.lower() or "Testing" in output
+        assert "Try asking" in output or "What I can do" in output
+
+    def test_print_welcome_unknown_agent(self, capsys):
+        """Unknown agent should print nothing."""
+        _print_welcome("nonexistent")
+        output = capsys.readouterr().out
+        assert output == ""
 
 
 class TestGetAgents:
@@ -671,6 +707,33 @@ class TestResolvePlaceholders:
         assert result is None
 
     def test_lowercase_angle_brackets_not_placeholders(self):
-        """Only <UPPER_CASE> are treated as placeholders."""
+        """Only <UPPER_CASE> are treated as angle placeholders."""
         cmd = 'echo <not_a_placeholder>'
         assert _resolve_placeholders(cmd) == cmd
+
+    def test_curly_brace_placeholder(self):
+        """{job_name} is treated as a placeholder."""
+        from unittest.mock import patch
+        cmd = 'curl http://localhost/jenkins/{job_name}/{build_number}/status'
+        inputs = iter(["my-job", "42"])
+        with patch("builtins.input", side_effect=inputs):
+            result = _resolve_placeholders(cmd)
+        assert result == 'curl http://localhost/jenkins/my-job/42/status'
+
+    def test_mixed_angle_and_curly(self):
+        """Both <UPPER> and {lower} in same command."""
+        from unittest.mock import patch
+        cmd = 'curl http://<HOST>/{path}'
+        inputs = iter(["localhost:8000", "api/v1"])
+        with patch("builtins.input", side_effect=inputs):
+            result = _resolve_placeholders(cmd)
+        assert result == 'curl http://localhost:8000/api/v1'
+
+    def test_curly_duplicate_asked_once(self):
+        """Same {placeholder} used twice → asked only once."""
+        from unittest.mock import patch
+        cmd = '{id} and {id}'
+        with patch("builtins.input", return_value="99") as mock_input:
+            result = _resolve_placeholders(cmd)
+        assert result == "99 and 99"
+        assert mock_input.call_count == 1
