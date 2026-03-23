@@ -151,7 +151,24 @@ def cmd_init():
     print(f"  Repo config:   {cyan(os.path.join(cwd, PER_REPO_FILENAME))}")
     print()
 
-    if prompt_yes_no("Start the server now?", default=True):
+    # Check if server is already running
+    port = os.getenv("PORT", "8000")
+    server_running = False
+    try:
+        import httpx
+        r = httpx.get(f"http://127.0.0.1:{port}/health", timeout=2.0)
+        server_running = r.status_code == 200
+    except Exception:
+        pass
+
+    if server_running:
+        print(yellow(f"  Server is already running on port {port}."))
+        if prompt_yes_no("Restart the server to apply new config?", default=True):
+            cmd_restart()
+        else:
+            print(dim("  Config saved. Restart manually: code-agents restart"))
+            print()
+    elif prompt_yes_no("Start the server now?", default=True):
         _start_background(cwd)
     else:
         print()
@@ -1794,6 +1811,9 @@ def _generate_zsh_completion() -> str:
     cmd_list = " ".join(cmds) + " help"
     agents = " ".join(_AGENT_NAMES_FOR_COMPLETION)
 
+    # Build agent list as individual zsh array entries
+    agents_zsh = " ".join(f"'{a}'" for a in _AGENT_NAMES_FOR_COMPLETION)
+
     return f'''#compdef code-agents
 # Zsh completion for code-agents CLI
 # Install: code-agents completions --zsh >> ~/.zshrc
@@ -1831,9 +1851,6 @@ _code_agents() {{
     local -a pipeline_subcmds
     pipeline_subcmds=('start:Start pipeline' 'status:Show pipeline status' 'advance:Advance pipeline step' 'rollback:Rollback deployment')
 
-    local -a agents
-    agents=({agents})
-
     if (( CURRENT == 2 )); then
         _describe 'command' commands
     elif (( CURRENT == 3 )); then
@@ -1845,24 +1862,23 @@ _code_agents() {{
                 _describe 'subcommand' pipeline_subcmds
                 ;;
             chat)
-                _values 'agent' $agents
+                compadd -- {agents_zsh}
                 ;;
             start)
-                _values 'flag' '--fg' '--foreground'
+                compadd -- '--fg' '--foreground'
                 ;;
         esac
     elif (( CURRENT == 4 )); then
         case "$words[2] $words[3]" in
             "rules create"|"rules list")
-                _values 'flag' '--global' '--agent'
+                compadd -- '--global' '--agent'
                 ;;
         esac
-    elif (( CURRENT == 5 )); then
-        case "$words[4]" in
-            --agent)
-                _values 'agent' $agents
-                ;;
-        esac
+    elif (( CURRENT >= 4 )); then
+        # After --agent anywhere in the line, complete agent names
+        if [[ "${{words[CURRENT-1]}}" == "--agent" ]]; then
+            compadd -- {agents_zsh}
+        fi
     fi
 }}
 

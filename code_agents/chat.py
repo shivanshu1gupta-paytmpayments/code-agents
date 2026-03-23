@@ -68,6 +68,211 @@ AGENT_ROLES = {
     "agent-router": "Help pick the right specialist agent",
 }
 
+AGENT_WELCOME = {
+    "code-reasoning": (
+        "Code Reasoning — Read-Only Analysis",
+        [
+            "Explain architecture and design patterns",
+            "Trace data flows through the codebase",
+            "Compare approaches and analyze complexity",
+            "Answer 'how does this work?' questions",
+        ],
+        [
+            "Explain the authentication flow in this project",
+            "How does the payment processing pipeline work?",
+            "What design patterns are used in the routers?",
+        ],
+    ),
+    "code-writer": (
+        "Code Writer — Generate & Modify Code",
+        [
+            "Write new files, modules, and functions",
+            "Refactor existing code for clarity",
+            "Implement features from requirements",
+            "Apply fixes and improvements",
+        ],
+        [
+            "Add input validation to the login function",
+            "Refactor the UserService to use dependency injection",
+            "Create a retry mechanism for failed API calls",
+        ],
+    ),
+    "code-reviewer": (
+        "Code Reviewer — Critical Review",
+        [
+            "Identify bugs and security vulnerabilities",
+            "Suggest performance improvements",
+            "Flag style violations and anti-patterns",
+            "Review test quality and coverage gaps",
+        ],
+        [
+            "Review the auth module for security issues",
+            "Check the new payment endpoint for bugs",
+            "Review the last 3 commits for quality",
+        ],
+    ),
+    "code-tester": (
+        "Code Tester — Testing & Debugging",
+        [
+            "Write unit tests, integration tests, and fixtures",
+            "Debug failing tests and trace issues",
+            "Optimize code quality and readability",
+            "Refactor test suites for better coverage",
+        ],
+        [
+            "Write unit tests for the PaymentService class",
+            "Debug why test_auth_flow is failing",
+            "Add edge case tests for the retry logic",
+        ],
+    ),
+    "redash-query": (
+        "Redash Query — SQL & Database Explorer",
+        [
+            "List available data sources and schemas",
+            "Write SQL queries from natural language",
+            "Execute queries and format results",
+            "Explore table structures and relationships",
+        ],
+        [
+            "Show me all data sources available",
+            "Write a query for the top 10 users by order count",
+            "What tables are in the acqcore0 database?",
+        ],
+    ),
+    "git-ops": (
+        "Git Operations — Branches, Diffs, Logs",
+        [
+            "List branches and show current branch",
+            "Show diffs between branches",
+            "View commit history and logs",
+            "Check working tree status",
+        ],
+        [
+            "Show the last 10 commits",
+            "What changed between main and this branch?",
+            "List all branches with their last commit date",
+        ],
+    ),
+    "test-coverage": (
+        "Test Coverage — Run Tests & Analyze Gaps",
+        [
+            "Run test suites (auto-detects pytest/jest/maven/go)",
+            "Generate coverage reports",
+            "Identify new code lacking test coverage",
+            "Report coverage percentages by file",
+        ],
+        [
+            "Run tests and show coverage report",
+            "Which files have less than 80% coverage?",
+            "Show uncovered lines in the auth module",
+        ],
+    ),
+    "jenkins-build": (
+        "Jenkins Build — CI Build Jobs",
+        [
+            "Trigger Jenkins build jobs for a branch",
+            "Monitor build status in real-time",
+            "Fetch build logs and console output",
+            "Report build results and duration",
+        ],
+        [
+            "Trigger a build for the feature/auth branch",
+            "What's the status of the last build?",
+            "Show me the build logs for build #42",
+        ],
+    ),
+    "jenkins-deploy": (
+        "Jenkins Deploy — Deployment Jobs",
+        [
+            "Trigger deployment jobs with build numbers",
+            "Monitor deployment progress",
+            "Fetch deployment logs",
+            "Report deployment outcomes",
+        ],
+        [
+            "Deploy build #42 to staging",
+            "What's the status of the last deployment?",
+            "Show deployment logs for the latest deploy",
+        ],
+    ),
+    "argocd-verify": (
+        "ArgoCD Verify — Deployment Verification",
+        [
+            "Check application sync and health status",
+            "List pods and verify image tags",
+            "Scan pod logs for errors (ERROR, FATAL, panic)",
+            "Trigger rollback to previous revision",
+        ],
+        [
+            "Are all pods healthy after the latest deploy?",
+            "Check pod logs for any errors",
+            "Rollback to the previous deployment",
+        ],
+    ),
+    "pipeline-orchestrator": (
+        "Pipeline Orchestrator — Full CI/CD Pipeline",
+        [
+            "Guide through 6-step deployment pipeline",
+            "Connect → Review/Test → Build → Deploy → Verify → Rollback",
+            "Coordinate across Jenkins, ArgoCD, and git",
+            "End-to-end deployment automation",
+        ],
+        [
+            "Start the deployment pipeline for this branch",
+            "What's the status of the current pipeline?",
+            "Walk me through deploying to production",
+        ],
+    ),
+    "agent-router": (
+        "Agent Router — Find the Right Specialist",
+        [
+            "Recommend which agent to use for your task",
+            "Ask clarifying questions to understand your needs",
+            "Explain what each specialist agent does",
+            "Route you to the best agent for the job",
+        ],
+        [
+            "I need to fix a bug in the payment module",
+            "Help me set up CI/CD for this project",
+            "I want to understand how the auth system works",
+        ],
+    ),
+}
+
+
+def _print_welcome(agent_name: str) -> None:
+    """Print agent welcome message in a red bordered box."""
+    import shutil
+
+    welcome = AGENT_WELCOME.get(agent_name)
+    if not welcome:
+        return
+
+    title, capabilities, examples = welcome
+    term_width = shutil.get_terminal_size((80, 24)).columns
+    box_width = min(term_width - 4, 80)
+    inner = box_width - 2
+
+    def _pad(text: str) -> str:
+        visible_len = len(text)
+        pad = max(0, inner - visible_len - 1)
+        return red("  │") + f" {text}{' ' * pad}" + red("│")
+
+    print(red(f"  ┌{'─' * box_width}┐"))
+    print(red(f"  │") + f" {bold(cyan(title))}" + " " * max(0, inner - len(title) - 1) + red("│"))
+    print(red(f"  ├{'─' * box_width}┤"))
+    print(_pad(""))
+    print(_pad(bold("What I can do:")))
+    for cap in capabilities:
+        print(_pad(f"  • {cap}"))
+    print(_pad(""))
+    print(_pad(bold("Try asking:")))
+    for ex in examples:
+        print(_pad(f"  {dim(ex)}"))
+    print(_pad(""))
+    print(red(f"  └{'─' * box_width}┘"))
+    print()
+
 
 # ---------------------------------------------------------------------------
 # Server communication
@@ -318,95 +523,129 @@ def _extract_commands(text: str) -> list[str]:
     return commands
 
 
-_PLACEHOLDER_RE = re.compile(r"<([A-Z][A-Z0-9_]+)>")
+# Matches <UPPER_CASE> and {lower_case} placeholders
+_PLACEHOLDER_ANGLE_RE = re.compile(r"<([A-Z][A-Z0-9_]+)>")
+_PLACEHOLDER_CURLY_RE = re.compile(r"\{([a-z][a-z0-9_]*)\}")
 
 
 def _resolve_placeholders(cmd: str) -> Optional[str]:
     """
-    Detect <PLACEHOLDER> tokens in a command and prompt user to fill them.
+    Detect placeholder tokens in a command and prompt user to fill them.
+
+    Supports two styles:
+      <DATA_SOURCE_ID>  — angle bracket, UPPER_CASE
+      {job_name}        — curly brace, lower_case
+
     Returns the resolved command, or None if user cancels.
     """
-    placeholders = _PLACEHOLDER_RE.findall(cmd)
-    if not placeholders:
+    # Collect both styles: (placeholder_text, display_name)
+    found: list[tuple[str, str]] = []
+    for m in _PLACEHOLDER_ANGLE_RE.finditer(cmd):
+        found.append((m.group(0), m.group(1)))  # ("<DATA_SOURCE_ID>", "DATA_SOURCE_ID")
+    for m in _PLACEHOLDER_CURLY_RE.finditer(cmd):
+        found.append((m.group(0), m.group(1)))  # ("{job_name}", "job_name")
+
+    if not found:
         return cmd
 
     # Deduplicate while preserving order
     seen = set()
-    unique = []
-    for p in placeholders:
-        if p not in seen:
-            seen.add(p)
-            unique.append(p)
+    unique: list[tuple[str, str]] = []
+    for token, name in found:
+        if token not in seen:
+            seen.add(token)
+            unique.append((token, name))
 
     print(f"    {yellow('Placeholders detected — fill in values:')}")
     replacements = {}
-    for ph in unique:
+    for token, name in unique:
         try:
-            value = input(f"    {bold(f'<{ph}>')}: ").strip()
+            value = input(f"    {bold(token)}: ").strip()
         except (EOFError, KeyboardInterrupt):
             print()
             return None
         if not value:
-            print(dim(f"    Skipped (no value for <{ph}>)."))
+            print(dim(f"    Skipped (no value for {token})."))
             return None
-        replacements[ph] = value
+        replacements[token] = value
 
-    for ph, value in replacements.items():
-        cmd = cmd.replace(f"<{ph}>", value)
+    for token, value in replacements.items():
+        cmd = cmd.replace(token, value)
 
     return cmd
 
 
-def _offer_run_commands(commands: list[str], cwd: str) -> None:
-    """Offer to run detected shell commands from agent response."""
-    import subprocess
+def _offer_run_commands(commands: list[str], cwd: str) -> list[dict[str, str]]:
+    """
+    Offer to run detected shell commands. Returns list of executed results:
+    [{"command": "...", "output": "..."}]
+
+    Results can be fed back to the agent for continued reasoning.
+    """
+    results: list[dict[str, str]] = []
 
     if not commands:
-        return
+        return results
 
-    print(f"  {bold(cyan('Commands detected:'))}")
+    import shutil
+    term_width = shutil.get_terminal_size((80, 24)).columns
+    box_width = min(term_width - 4, 100)
+    inner = box_width - 2
+
+    print(red(f"  ┌{'─' * box_width}┐"))
+    title = f" {bold(cyan('Commands detected:'))}"
+    print(red(f"  │") + title + " " * max(0, inner - len("Commands detected:") - 1) + red("│"))
+    print(red(f"  ├{'─' * box_width}┤"))
     for i, cmd in enumerate(commands, 1):
-        print(f"    {bold(str(i) + '.')} {cyan(cmd)}")
+        display = cmd if len(cmd) <= (inner - 6) else cmd[:inner - 9] + "..."
+        line = f" {bold(str(i) + '.')} {cyan(display)}"
+        visible_len = len(f" {i}. {display}")
+        pad = max(0, inner - visible_len)
+        print(red(f"  │") + line + " " * pad + red("│"))
+    print(red(f"  └{'─' * box_width}┘"))
     print()
 
     for i, cmd in enumerate(commands, 1):
+        display = cmd if len(cmd) <= 60 else cmd[:57] + "..."
         try:
             answer = input(
-                f"  Run {bold(cyan(cmd))}? [y/N/all/skip]: "
+                f"  Run [{bold(str(i))}] {display}? [y/N/all/skip]: "
             ).strip().lower()
         except (EOFError, KeyboardInterrupt):
             print()
-            return
+            return results
 
         if answer == "skip":
             print(dim("  Skipped remaining commands."))
-            return
+            return results
         elif answer == "all":
             for remaining_cmd in commands[i - 1:]:
                 resolved = _resolve_placeholders(remaining_cmd)
                 if resolved:
-                    _run_single_command(resolved, cwd)
-            return
+                    output = _run_single_command(resolved, cwd)
+                    results.append({"command": resolved, "output": output})
+            return results
         elif answer in ("y", "yes"):
             resolved = _resolve_placeholders(cmd)
             if resolved:
-                _run_single_command(resolved, cwd)
+                output = _run_single_command(resolved, cwd)
+                results.append({"command": resolved, "output": output})
         else:
             print(dim(f"  Skipped."))
 
+    return results
 
-def _run_single_command(cmd: str, cwd: str) -> None:
-    """Run a single shell command and display output in a red bordered block."""
+
+def _run_single_command(cmd: str, cwd: str) -> str:
+    """Run a single shell command, display in red box, and return raw output."""
     import subprocess
     import shutil
 
     term_width = shutil.get_terminal_size((80, 24)).columns
-    box_width = min(term_width - 4, 100)  # leave margin, cap at 100
-    inner_width = box_width - 2  # inside the border
+    box_width = min(term_width - 4, 100)
+    inner_width = box_width - 2
 
     def _box_line(text: str) -> str:
-        """Format a line inside the red box."""
-        # Truncate if too long (account for ANSI codes in display)
         visible = text[:inner_width]
         pad = max(0, inner_width - len(visible))
         return red(f"  │") + f" {visible}{' ' * pad}" + red("│")
@@ -416,6 +655,7 @@ def _run_single_command(cmd: str, cwd: str) -> None:
     print(red(f"  │") + f" {bold('$')} {cyan(cmd[:inner_width - 4])}" + " " * max(0, inner_width - len(cmd) - 3) + red("│"))
     print(red(f"  ├{'─' * box_width}┤"))
 
+    raw_output = ""
     try:
         result = subprocess.run(
             cmd,
@@ -425,9 +665,9 @@ def _run_single_command(cmd: str, cwd: str) -> None:
             text=True,
             timeout=120,
         )
-        output_lines = []
+        raw_output = (result.stdout or "") + (result.stderr or "")
+        display_lines = []
         if result.stdout:
-            # Pretty-print JSON if the output is valid JSON
             stdout = result.stdout
             try:
                 import json as _json
@@ -435,21 +675,21 @@ def _run_single_command(cmd: str, cwd: str) -> None:
                 stdout = _json.dumps(parsed, indent=2, ensure_ascii=False)
             except (ValueError, TypeError):
                 pass
-            output_lines.extend(stdout.splitlines())
+            display_lines.extend(stdout.splitlines())
         if result.stderr:
-            output_lines.extend(result.stderr.splitlines())
+            display_lines.extend(result.stderr.splitlines())
 
-        if output_lines:
-            for line in output_lines[:50]:  # cap at 50 lines
+        if display_lines:
+            for line in display_lines[:50]:
                 print(_box_line(line))
-            if len(output_lines) > 50:
-                print(_box_line(f"... ({len(output_lines) - 50} more lines)"))
+            if len(display_lines) > 50:
+                print(_box_line(f"... ({len(display_lines) - 50} more lines)"))
 
-        # Status line
         if result.returncode != 0:
             status = red(f"  │ ✗ Exit code: {result.returncode}")
             pad = max(0, inner_width - len(f" ✗ Exit code: {result.returncode}"))
             print(status + " " * pad + red("│"))
+            raw_output += f"\n[exit code: {result.returncode}]"
         else:
             status_text = " ✓ Done"
             pad = max(0, inner_width - len(status_text))
@@ -457,12 +697,14 @@ def _run_single_command(cmd: str, cwd: str) -> None:
 
     except subprocess.TimeoutExpired:
         print(_box_line(red("Timed out (120s)")))
+        raw_output = "[timed out after 120s]"
     except Exception as e:
         print(_box_line(red(f"Error: {e}")))
+        raw_output = f"[error: {e}]"
 
-    # Bottom border
     print(red(f"  └{'─' * box_width}┘"))
     print()
+    return raw_output
 
 
 # ---------------------------------------------------------------------------
@@ -648,9 +890,9 @@ def _handle_command(cmd: str, state: dict, url: str) -> Optional[str]:
         role = AGENT_ROLES.get(arg, agents.get(arg, ""))
         print()
         print(green(f"  ✓ Switched to: {bold(arg)} ({agents.get(arg, '')})"))
-        print(f"    Role: {dim(role)}")
         print(f"    Session: {dim('new')}")
         print()
+        _print_welcome(arg)
 
     elif command == "/session":
         sid = state.get("session_id")
@@ -888,6 +1130,9 @@ def chat_main(args: list[str] | None = None):
     print(dim("  Commands: /help /quit /agents /agent <name> /session /clear"))
     print()
 
+    # Welcome message
+    _print_welcome(agent_name)
+
     # REPL
     while True:
         try:
@@ -1058,11 +1303,57 @@ def chat_main(args: list[str] | None = None):
                 print()  # Newline after response
             print()  # Blank line between turns
 
-            # Offer to run detected shell commands
+            # Agentic loop: detect commands → run → feed output back → agent continues
             if full_response:
                 commands = _extract_commands("".join(full_response))
                 if commands:
-                    _offer_run_commands(commands, state.get("repo_path", cwd))
+                    exec_results = _offer_run_commands(commands, state.get("repo_path", cwd))
+
+                    # Feed execution results back to the agent automatically
+                    if exec_results:
+                        feedback_parts = []
+                        for er in exec_results:
+                            output_preview = er["output"][:2000] if er["output"] else "(no output)"
+                            feedback_parts.append(
+                                f"Command: {er['command']}\nOutput:\n{output_preview}"
+                            )
+                        feedback = (
+                            "I ran the following commands. Here are the results. "
+                            "Please analyze the output and suggest next steps if needed.\n\n"
+                            + "\n\n---\n\n".join(feedback_parts)
+                        )
+
+                        print(dim("  Feeding results back to agent..."))
+                        print()
+
+                        # Send follow-up to agent with results
+                        followup_messages = [
+                            {"role": "system", "content": system_context},
+                            {"role": "user", "content": feedback},
+                        ]
+
+                        agent_label = bold(magenta(current_agent))
+                        sys.stdout.write(f"  {agent_label} › ")
+                        sys.stdout.flush()
+
+                        for piece_type, piece_content in _stream_chat(
+                            url, current_agent, followup_messages,
+                            state.get("session_id"),
+                            cwd=state.get("repo_path"),
+                        ):
+                            if piece_type == "text":
+                                sys.stdout.write(piece_content)
+                                sys.stdout.flush()
+                            elif piece_type == "reasoning":
+                                sys.stdout.write(f"\n    {dim(piece_content.strip())}")
+                                sys.stdout.flush()
+                            elif piece_type == "session_id":
+                                state["session_id"] = piece_content
+                            elif piece_type == "error":
+                                print(red(f"\n  Error: {piece_content}"))
+
+                        print()
+                        print()
 
         except KeyboardInterrupt:
             print()
