@@ -32,15 +32,71 @@ class TestJenkinsClient:
         )
         assert c.base_url == "https://jenkins.example.com"
 
-    def test_job_path_encoding(self):
-        """Verify folder job paths are encoded correctly."""
+    def test_job_path_simple(self):
+        """Simple job name."""
         c = self._make_client()
-        # The trigger_build method constructs the path internally
-        # Test by checking the URL pattern logic
-        job_name = "folder/subfolder/my-job"
-        expected = "/job/folder/job/subfolder/job/my-job"
-        actual = "/job/" + "/job/".join(job_name.split("/"))
-        assert actual == expected
+        assert c._job_path("my-job") == "/job/my-job"
+
+    def test_job_path_folder(self):
+        """Two-level folder job."""
+        c = self._make_client()
+        assert c._job_path("pg2/my-job") == "/job/pg2/job/my-job"
+
+    def test_job_path_deep_folder(self):
+        """Three-level folder job (like pg2/pg2-dev-build-jobs/pg2-dev-pg-acquiring-biz)."""
+        c = self._make_client()
+        assert c._job_path("pg2/pg2-dev-build-jobs/pg2-dev-pg-acquiring-biz") == \
+            "/job/pg2/job/pg2-dev-build-jobs/job/pg2-dev-pg-acquiring-biz"
+
+
+class TestExtractBuildVersion:
+    """Test build version extraction from console logs."""
+
+    def test_docker_tag(self):
+        log = "Building image...\nPushing repo/my-service:1.2.3-42\nDone."
+        assert JenkinsClient.extract_build_version(log) == "1.2.3-42"
+
+    def test_build_version_env(self):
+        log = "Compiling...\nBUILD_VERSION=2.5.0-SNAPSHOT\nUpload complete."
+        assert JenkinsClient.extract_build_version(log) == "2.5.0-SNAPSHOT"
+
+    def test_version_equals(self):
+        log = "Setting version=3.1.0\nBuild success."
+        assert JenkinsClient.extract_build_version(log) == "3.1.0"
+
+    def test_build_tag_number(self):
+        log = "Starting...\nbuild tag: 157\nFinished: SUCCESS"
+        assert JenkinsClient.extract_build_version(log) == "157"
+
+    def test_build_hash_number(self):
+        log = "Build #42 completed\nFinished: SUCCESS"
+        assert JenkinsClient.extract_build_version(log) == "42"
+
+    def test_artifact_upload(self):
+        log = "Uploading my-service-1.5.2.jar to nexus\nDone."
+        assert JenkinsClient.extract_build_version(log) == "1.5.2"
+
+    def test_docker_v_prefix(self):
+        log = "Successfully built image:v2.0.1\nPush complete."
+        assert JenkinsClient.extract_build_version(log) == "v2.0.1"
+
+    def test_no_version_found(self):
+        log = "Compiling...\nAll tests passed.\nFinished: SUCCESS"
+        assert JenkinsClient.extract_build_version(log) is None
+
+    def test_empty_log(self):
+        assert JenkinsClient.extract_build_version("") is None
+
+    def test_last_match_wins(self):
+        """Multiple versions — last one (final artifact) should be returned."""
+        log = "version=1.0.0\nRebuilding...\nversion=2.0.0\nDone."
+        assert JenkinsClient.extract_build_version(log) == "2.0.0"
+
+    def test_version_in_last_200_lines(self):
+        """Only scans last 200 lines."""
+        early = "BUILD_VERSION=1.0.0\n" + ("noise\n" * 300)
+        late = "BUILD_VERSION=2.0.0\nDone."
+        assert JenkinsClient.extract_build_version(early + late) == "2.0.0"
 
 
 class TestArgoCDClient:
