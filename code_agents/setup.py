@@ -69,9 +69,10 @@ def prompt(
     secret: bool = False,
     required: bool = False,
     validator: Optional[Callable[[str], bool]] = None,
+    transform: Optional[Callable[[str], str]] = None,
     error_msg: str = "Invalid input.",
 ) -> str:
-    """Prompt user for input. Loops on validation failure."""
+    """Prompt user for input. Loops on validation failure. Optional transform applied before return."""
     suffix = f" [{default}]" if default else ""
     while True:
         try:
@@ -91,6 +92,9 @@ def prompt(
         if value and validator and not validator(value):
             print(red(f"    {error_msg}"))
             continue
+        # Apply transform (e.g., clean job path)
+        if value and transform:
+            value = transform(value)
         return value
 
 
@@ -150,14 +154,25 @@ def validate_port(v: str) -> bool:
 
 
 def validate_job_path(v: str) -> bool:
-    """Jenkins job should be a clean folder path, not a full URL or job/ prefixed path."""
+    """Jenkins job should be a clean folder path, not a full URL."""
     if v.startswith("http://") or v.startswith("https://"):
         return False
-    # Auto-clean: strip job/ prefix if user pasted from Jenkins URL
-    cleaned = "/".join(p for p in v.strip("/").split("/") if p and p != "job")
+    return bool(v.strip("/"))
+
+
+def clean_job_path(v: str) -> str:
+    """Strip 'job/' prefixes from Jenkins paths pasted from browser URLs."""
+    raw_parts = [p for p in v.strip("/").split("/") if p]
+    parts = []
+    for i, p in enumerate(raw_parts):
+        if p == "job" and i + 1 < len(raw_parts):
+            continue  # skip 'job' before a real name
+        else:
+            parts.append(p)
+    cleaned = "/".join(parts)
     if cleaned != v.strip("/"):
         print(dim(f"    Auto-cleaned: {v} → {cleaned}"))
-    return bool(cleaned)
+    return cleaned
 
 
 # ---------------------------------------------------------------------------

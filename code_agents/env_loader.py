@@ -29,6 +29,7 @@ PER_REPO_FILENAME = ".env.code-agents"
 GLOBAL_VARS = {
     # Core
     "CURSOR_API_KEY", "ANTHROPIC_API_KEY", "CURSOR_API_URL", "CODE_AGENTS_HTTP_ONLY",
+    "CODE_AGENTS_BACKEND", "CODE_AGENTS_CLAUDE_CLI_MODEL",
     # Server
     "HOST", "PORT", "LOG_LEVEL", "AGENTS_DIR",
     "CODE_AGENTS_PUBLIC_BASE_URL", "OPEN_WEBUI_PUBLIC_URL",
@@ -67,11 +68,13 @@ def load_all_env(cwd: str | None = None) -> None:
     """
     Load environment from global config, legacy .env, and per-repo overrides.
 
-    Order (later wins):
-      1. ~/.code-agents/config.env  (global defaults)
-      2. {cwd}/.env                 (legacy fallback — for backward compat)
-      3. {cwd}/.env.code-agents     (per-repo overrides)
-      4. TARGET_REPO_PATH set to cwd (always runtime)
+    Load order (later sources override earlier ones):
+      1. ~/.code-agents/config.env  (global defaults, override=False — only sets unset vars)
+      2. {cwd}/.env                 (legacy fallback, override=True — overrides global)
+      3. {cwd}/.env.code-agents     (per-repo overrides, override=True — overrides both)
+      4. TARGET_REPO_PATH            (always set from cwd at runtime, never stored)
+
+    Precedence: per-repo > legacy .env > global config > existing env vars
     """
     try:
         from dotenv import load_dotenv

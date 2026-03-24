@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import json
 import logging
 import os
+import shutil
 from typing import AsyncIterator, Optional
 
 from .config import AgentConfig
+from .message_types import AssistantMessage, ResultMessage, SystemMessage, TextBlock
 
 logger = logging.getLogger("code_agents.backend")
 
@@ -108,6 +111,100 @@ def _patch_cursor_sdk_dash():
 _patch_cursor_sdk_dash()
 
 
+async def _run_claude_cli(
+    agent: AgentConfig,
+    prompt: str,
+    model: str,
+    cwd: str,
+    session_id: Optional[str] = None,
+) -> AsyncIterator:
+    """
+    Run a query via the Claude CLI (claude --print).
+
+    Uses the user's Claude subscription auth — no API key needed.
+    Requires the `claude` CLI to be installed and logged in.
+    """
+    import asyncio
+
+    cli_path = shutil.which("claude")
+    if not cli_path:
+        raise RuntimeError(
+            "Claude CLI not found. Install it: npm install -g @anthropic-ai/claude-code\n"
+            "Then login: claude (follow browser prompts)"
+        )
+
+    cmd = [cli_path, "--print", "--output-format", "json"]
+
+    if model:
+        cmd.extend(["--model", model])
+
+    if agent.system_prompt:
+        cmd.extend(["--system-prompt", agent.system_prompt])
+
+    if session_id:
+        cmd.extend(["--resume", session_id])
+
+    # Permission mode
+    if agent.permission_mode in ("acceptEdits", "bypassPermissions"):
+        cmd.append("--dangerously-skip-permissions")
+
+    # Add the prompt
+    cmd.append(prompt)
+
+    logger.info("claude-cli: %s model=%s cwd=%s prompt_len=%d", cli_path, model, cwd, len(prompt))
+
+    proc = await asyncio.create_subprocess_exec(
+        *cmd,
+        cwd=cwd,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+
+    stdout_data, stderr_data = await proc.communicate()
+
+    if proc.returncode != 0:
+        error_text = stderr_data.decode("utf-8", errors="replace").strip()
+        # Filter out SSL warnings
+        error_lines = [l for l in error_text.splitlines() if "warn:" not in l.lower()]
+        error_msg = "\n".join(error_lines) or f"Claude CLI exited with code {proc.returncode}"
+        raise RuntimeError(f"Claude CLI error: {error_msg}")
+
+    # Parse JSON output
+    output = stdout_data.decode("utf-8", errors="replace").strip()
+    try:
+        data = json.loads(output)
+    except json.JSONDecodeError:
+        # Fallback: treat as plain text
+        yield SystemMessage(subtype="init", data={"backend": "claude-cli"})
+        yield AssistantMessage(content=[TextBlock(text=output)], model=model)
+        yield ResultMessage(subtype="result", duration_ms=0, duration_api_ms=0,
+                            is_error=False, session_id="", usage=None)
+        return
+
+    # Extract from JSON result
+    result_text = data.get("result", "")
+    sid = data.get("session_id", "")
+    duration = data.get("duration_ms", 0)
+    duration_api = data.get("duration_api_ms", 0)
+    cost = data.get("total_cost_usd", 0)
+    usage = data.get("usage", {})
+
+    yield SystemMessage(subtype="init", data={
+        "backend": "claude-cli",
+        "session_id": sid,
+        "cost_usd": cost,
+    })
+    yield AssistantMessage(content=[TextBlock(text=result_text)], model=model)
+    yield ResultMessage(
+        subtype="result",
+        duration_ms=duration,
+        duration_api_ms=duration_api,
+        is_error=data.get("is_error", False),
+        session_id=sid,
+        usage=usage if isinstance(usage, dict) else None,
+    )
+
+
 async def run_agent(
     agent: AgentConfig,
     prompt: str,
@@ -145,6 +242,17 @@ async def run_agent(
         list((agent.extra_args or {}).keys()),
         "set" if agent.api_key else "unset",
     )
+
+    # Check for claude-cli override via environment
+    backend = agent.backend
+    if os.getenv("CODE_AGENTS_BACKEND", "").strip() == "claude-cli":
+        backend = "claude-cli"
+        model = model or os.getenv("CODE_AGENTS_CLAUDE_CLI_MODEL", "claude-sonnet-4-6")
+
+    if backend == "claude-cli":
+        async for message in _run_claude_cli(agent, prompt, model, cwd, session_id):
+            yield message
+        return
 
     if agent.backend == "cursor_http":
         async for message in _run_cursor_http(agent, prompt, model):
@@ -187,7 +295,9 @@ async def run_agent(
         env[env_key] = api_key
 
     # Inject --trust so cursor-agent doesn't prompt for workspace trust
-    extra = dict(agent.extra_args or {})
+    # Use deepcopy to avoid mutating the original agent config
+    import copy as _copy
+    extra = _copy.deepcopy(agent.extra_args or {})
     if agent.backend != "claude":
         extra.setdefault("trust", None)  # None = bare flag (--trust)
 

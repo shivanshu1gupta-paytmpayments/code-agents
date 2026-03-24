@@ -157,14 +157,29 @@ def cmd_init():
     # Backend
     if run_all or "--backend" in section_flags:
         print(bold("  Backend Configuration"))
-        choice = prompt_choice("Which backend?", ["Cursor (default)", "Claude", "Both"], default=1)
-        if choice in (1, 3):
+        choice = prompt_choice(
+            "Which backend?",
+            [
+                "Cursor (default — needs CURSOR_API_KEY)",
+                "Claude API (needs ANTHROPIC_API_KEY)",
+                "Claude CLI (uses your Claude subscription — no API key)",
+                "Both Cursor + Claude API",
+            ],
+            default=1,
+        )
+        if choice in (1, 4):
             env_vars["CURSOR_API_KEY"] = prompt("CURSOR_API_KEY", default=existing.get("CURSOR_API_KEY", ""), secret=True, required=True)
             url = prompt("Cursor API URL (blank for CLI mode)", default=existing.get("CURSOR_API_URL", ""), validator=validate_url, error_msg="Must be a valid URL")
             if url:
                 env_vars["CURSOR_API_URL"] = url
-        if choice in (2, 3):
+        if choice in (2, 4):
             env_vars["ANTHROPIC_API_KEY"] = prompt("ANTHROPIC_API_KEY", default=existing.get("ANTHROPIC_API_KEY", ""), secret=True, required=True)
+        if choice == 3:
+            env_vars["CODE_AGENTS_BACKEND"] = "claude-cli"
+            print(dim("    Claude CLI uses your Claude Pro/Max subscription."))
+            print(dim("    Make sure you're logged in: run 'claude' in terminal first."))
+            model = prompt("Claude model", default="claude-sonnet-4-6")
+            env_vars["CODE_AGENTS_CLAUDE_CLI_MODEL"] = model
         print()
 
     # Server
@@ -178,7 +193,7 @@ def cmd_init():
     if run_all or "--jenkins" in section_flags:
         should_configure = True if "--jenkins" in section_flags else prompt_yes_no("Configure Jenkins?", default=False)
         if should_configure:
-            from .setup import validate_job_path
+            from .setup import validate_job_path, clean_job_path
             print(dim("    Jenkins base URL without job path"))
             print(dim("    Example: https://jenkins.pg2nonprod.paytmpayments.in/"))
             env_vars["JENKINS_URL"] = prompt(
@@ -197,13 +212,15 @@ def cmd_init():
                 "JENKINS_BUILD_JOB",
                 default=existing.get("JENKINS_BUILD_JOB", "pg2/pg2-dev-build-jobs/pg2-dev-pg-acquiring-biz"),
                 required=True, validator=validate_job_path,
+                transform=clean_job_path,
                 error_msg="Enter folder path, not full URL.",
             )
             print(dim("    Deploy job (same as build job if same pipeline)"))
             env_vars["JENKINS_DEPLOY_JOB"] = prompt(
                 "JENKINS_DEPLOY_JOB",
                 default=existing.get("JENKINS_DEPLOY_JOB", env_vars.get("JENKINS_BUILD_JOB", "")),
-                validator=validate_job_path, error_msg="Enter folder path.",
+                validator=validate_job_path, transform=clean_job_path,
+                error_msg="Enter folder path.",
             )
             print()
 
@@ -855,6 +872,101 @@ def cmd_agents():
         print(f"    {cyan(name):<28} {dim(display)}")
         print(f"      {dim(endpoint)}")
     print(f"\n  Total: {bold(str(len(agents)))} agents")
+    print()
+
+
+def cmd_sessions(args: list[str] | None = None):
+    """List and manage saved chat sessions."""
+    bold, green, yellow, red, cyan, dim = _colors()
+    from datetime import datetime
+    from .chat_history import list_sessions, delete_session
+
+    args = args or []
+    cwd = _user_cwd()
+
+    # Sub-commands: list (default), delete <N>, clear
+    sub = args[0] if args else "list"
+
+    if sub == "clear":
+        from .chat_history import HISTORY_DIR
+        import shutil
+        if HISTORY_DIR.exists():
+            count = len(list(HISTORY_DIR.glob("*.json")))
+            if count == 0:
+                print(dim("  No sessions to clear."))
+                return
+            print(f"  This will delete {bold(str(count))} saved chat sessions.")
+            try:
+                answer = input("  Are you sure? [y/N]: ").strip().lower()
+            except (EOFError, KeyboardInterrupt):
+                print()
+                return
+            if answer in ("y", "yes"):
+                shutil.rmtree(HISTORY_DIR)
+                HISTORY_DIR.mkdir(parents=True, exist_ok=True)
+                print(green(f"  \u2713 Cleared {count} sessions."))
+            else:
+                print(dim("  Cancelled."))
+        else:
+            print(dim("  No sessions to clear."))
+        return
+
+    if sub == "delete":
+        if len(args) < 2:
+            print(yellow("  Usage: code-agents sessions delete <session-id>"))
+            return
+        sid = args[1].strip()
+        if delete_session(sid):
+            print(green(f"  \u2713 Deleted session: {sid}"))
+        else:
+            print(red(f"  Session '{sid}' not found."))
+            print(dim("  Use 'code-agents sessions' to see session IDs."))
+        return
+
+    # Default: list sessions
+    show_all = "--all" in args
+    repo_path = None if show_all else cwd
+    # Find git root
+    if not show_all:
+        check_dir = cwd
+        while True:
+            if os.path.isdir(os.path.join(check_dir, ".git")):
+                repo_path = check_dir
+                break
+            parent = os.path.dirname(check_dir)
+            if parent == check_dir:
+                repo_path = cwd
+                break
+            check_dir = parent
+
+    sessions = list_sessions(limit=20, repo_path=repo_path)
+
+    print()
+    if not sessions:
+        print(dim("  No saved chat sessions."))
+        if not show_all:
+            print(dim("  Use --all to show sessions from all repos."))
+        print()
+        return
+
+    print(bold("  Saved chat sessions:"))
+    print()
+    for i, s in enumerate(sessions, 1):
+        ts = datetime.fromtimestamp(s["updated_at"]).strftime("%b %d %H:%M")
+        agent_label = cyan(s["agent"])
+        msg_count = s["message_count"]
+        title = s["title"]
+        repo_name = os.path.basename(s.get("repo_path", ""))
+        sid = s["id"]
+        print(f"    {cyan(sid)}")
+        print(f"      {title}")
+        print(f"      {agent_label}  {dim(f'{msg_count} msgs')}  {dim(ts)}  {dim(repo_name)}")
+    print()
+    print(f"  {dim('Resume:  code-agents chat --resume <session-id>')}")
+    print(f"  {dim('Delete:  code-agents sessions delete <session-id>')}")
+    print(f"  {dim('Clear:   code-agents sessions clear')}")
+    if not show_all:
+        print(f"  {dim('All:     code-agents sessions --all')}")
     print()
 
 
@@ -2039,6 +2151,7 @@ COMMANDS = {
     "shutdown":  ("Shutdown the server",                              cmd_shutdown),
     "status":    ("Check server health and config",                 cmd_status),
     "agents":    ("List all available agents",                      cmd_agents),
+    "sessions":  ("List saved chat sessions",                       None),  # special handling
     "config":    ("Show current .env configuration",                cmd_config),
     "doctor":    ("Diagnose common issues",                         cmd_doctor),
     "logs":      ("Tail the log file",                              None),  # special handling
@@ -2320,12 +2433,14 @@ def cmd_help():
     p(f"      Open interactive chat REPL. If no agent specified, shows a")
     p(f"      numbered menu to pick from all 12 agents. Each agent stays")
     p(f"      in its role (writer writes code, tester writes tests, etc.).")
-    p(f"      Supports multi-turn sessions, streaming responses, and agent switching.")
+    p(f"      Supports multi-turn sessions, streaming, agent switching, and auto-saved history.")
     p(f"        {dim('<agent-name>')}  Skip menu, start directly with this agent")
+    p(f"        {dim('--resume <id>')}      Resume a saved chat session by UUID")
     p(f"      {dim('$ code-agents chat                  # pick from menu')}")
     p(f"      {dim('$ code-agents chat code-reasoning   # start with reasoning')}")
     p(f"      {dim('$ code-agents chat code-writer      # start with writer')}")
     p(f"      {dim('$ code-agents chat code-tester      # start with tester')}")
+    p(f"      {dim('$ code-agents chat --resume <uuid>  # resume a saved session')}")
     p()
     p(f"      {bold('Chat slash commands (inside the chat):')}")
     p(f"        {cyan('/help'):<18} Show all chat commands")
@@ -2337,6 +2452,9 @@ def cmd_help():
     p(f"        {cyan('/run <cmd>'):<18} Run a shell command in the repo directory")
     p(f"        {cyan('/session'):<18} Show current session ID (for multi-turn context)")
     p(f"        {cyan('/clear'):<18} Clear session — next message starts fresh")
+    p(f"        {cyan('/history'):<18} List saved chat sessions with UUIDs")
+    p(f"        {cyan('/resume <id>'):<18} Resume a saved chat by session UUID")
+    p(f"        {cyan('/delete-chat <id>'):<18} Delete a saved chat by session UUID")
     p(f"        {cyan('/<agent> <prompt>'):<18} Delegate a one-shot prompt to another agent")
     p()
     p(f"      {bold('Agent Rules (persistent instructions):')}")
@@ -2366,6 +2484,16 @@ def cmd_help():
     p(f"      Full interactive setup wizard (7 steps). Same as code-agents-setup.")
     p(f"      Checks Python, installs deps, prompts for all keys, writes .env.")
     p(f"      {dim('$ code-agents setup')}")
+    p()
+
+    p(f"    {cyan('sessions')} {dim('[--all | delete <id> | clear]')}")
+    p(f"      List and manage saved chat sessions.")
+    p(f"      Sessions are auto-saved during chat and stored in ~/.code-agents/chat_history/.")
+    p(f"        {dim('--all')}           Show sessions from all repos (default: current repo)")
+    p(f"        {dim('delete <id>')}     Delete a session by UUID")
+    p(f"        {dim('clear')}           Delete all saved sessions")
+    p(f"      {dim('$ code-agents sessions')}")
+    p(f"      {dim('$ code-agents sessions delete <uuid>')}")
     p()
 
     # ── Server ──
@@ -2535,6 +2663,8 @@ def main():
         elif command == "chat":
             from .chat import chat_main
             chat_main(rest)
+        elif command == "sessions":
+            cmd_sessions(rest)
         elif command == "shutdown":
             cmd_shutdown()
         elif command == "status":

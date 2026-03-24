@@ -8,6 +8,8 @@ import time
 import uuid
 from typing import Any, Optional
 
+from .rules_loader import load_rules
+
 logger = logging.getLogger(__name__)
 
 from .backend import run_agent
@@ -78,6 +80,24 @@ def last_user_message(messages: list[Message]) -> str:
     return ""
 
 
+def build_prompt(messages: list[Message]) -> str:
+    """Build a prompt from messages.
+
+    If there are multiple user/assistant turns, pack the full conversation
+    history into a single prompt so the SDK has full context — even if
+    the session_id expired. Single-turn requests just use the last user
+    message directly.
+    """
+    non_system = [m for m in messages if m.role != "system"]
+    if len(non_system) > 1:
+        parts = []
+        for m in non_system:
+            label = "Human" if m.role == "user" else "Assistant"
+            parts.append(f"{label}: {m.content}")
+        return "\n\n".join(parts)
+    return last_user_message(messages)
+
+
 # ── Streaming response ──────────────────────────────────────────────────────
 
 async def stream_response(agent: AgentConfig, req: CompletionRequest):
@@ -93,13 +113,12 @@ async def stream_response(agent: AgentConfig, req: CompletionRequest):
     cid = f"chatcmpl-{uuid.uuid4().hex[:12]}"
     created = int(time.time())
     model = req.model or agent.model
-    prompt = last_user_message(req.messages)
+    prompt = build_prompt(req.messages)
 
     # Inject rules into agent system prompt (fresh from disk every request)
-    from .rules_loader import load_rules
     rules_text = load_rules(agent.name, req.cwd or os.getenv("TARGET_REPO_PATH"))
     if rules_text:
-        agent = copy.copy(agent)
+        agent = copy.deepcopy(agent)
         agent.system_prompt = f"{rules_text}\n\n{agent.system_prompt or ''}"
 
     show_tools = req.stream_tool_activity if req.stream_tool_activity is not None else agent.stream_tool_activity
@@ -235,13 +254,12 @@ async def collect_response(agent: AgentConfig, req: CompletionRequest) -> dict:
     cid = f"chatcmpl-{uuid.uuid4().hex[:12]}"
     created = int(time.time())
     model = req.model or agent.model
-    prompt = last_user_message(req.messages)
+    prompt = build_prompt(req.messages)
 
     # Inject rules into agent system prompt (fresh from disk every request)
-    from .rules_loader import load_rules
     rules_text = load_rules(agent.name, req.cwd or os.getenv("TARGET_REPO_PATH"))
     if rules_text:
-        agent = copy.copy(agent)
+        agent = copy.deepcopy(agent)
         agent.system_prompt = f"{rules_text}\n\n{agent.system_prompt or ''}"
 
     show_tools = req.stream_tool_activity if req.stream_tool_activity is not None else agent.stream_tool_activity

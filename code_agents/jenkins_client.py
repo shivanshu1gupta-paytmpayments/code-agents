@@ -79,9 +79,18 @@ class JenkinsClient:
         Input: 'job/pg2/job/pg2-dev-build-jobs/'
         Output: '/job/pg2/job/pg2-dev-build-jobs'
         """
-        # Strip any existing 'job/' prefix segments and trailing slashes
-        # (user may copy-paste from Jenkins URL)
-        parts = [p for p in job_name.strip("/").split("/") if p and p != "job"]
+        # Strip 'job' segments that alternate with real folder names
+        # Pattern from Jenkins URL: job/pg2/job/builds/job/my-svc
+        # We strip 'job' only when it appears BEFORE a real name (every other position)
+        raw_parts = [p for p in job_name.strip("/").split("/") if p]
+        parts = []
+        for i, p in enumerate(raw_parts):
+            if p == "job" and i + 1 < len(raw_parts):
+                continue  # skip 'job' if followed by another segment
+            elif p == "job" and i + 1 == len(raw_parts):
+                parts.append(p)  # keep 'job' as a legitimate final folder name
+            else:
+                parts.append(p)
         return "/job/" + "/job/".join(parts)
 
     async def list_jobs(self, folder_name: str | None = None) -> list[dict]:
@@ -373,8 +382,11 @@ class JenkinsClient:
 
         if not build_number:
             return {
-                **trigger_result,
-                "error": "Could not determine build number from queue",
+                "job_name": job_name,
+                "queue_id": trigger_result.get("queue_id"),
+                "status": "failed",
+                "result": None,
+                "error": "Could not determine build number from queue (build may have been cancelled)",
             }
 
         # 2. Poll until complete

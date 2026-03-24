@@ -16,6 +16,8 @@ import json
 import os
 import re
 import sys
+import time as _time_mod
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
@@ -259,6 +261,124 @@ AGENT_WELCOME = {
 
 
 _ANSI_STRIP_RE = re.compile(r"\033\[[0-9;]*m")
+
+
+def _spinner(message: str):
+    """Context manager that shows a spinner while waiting. Like Claude CLI's 'thinking...'."""
+    import threading
+    import itertools
+
+    frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+    stop_event = threading.Event()
+
+    def _spin():
+        for frame in itertools.cycle(frames):
+            if stop_event.is_set():
+                break
+            sys.stdout.write(f"\r  {yellow(frame)} {dim(message)}")
+            sys.stdout.flush()
+            stop_event.wait(0.1)
+        # Clear the spinner line
+        sys.stdout.write(f"\r{' ' * (len(message) + 10)}\r")
+        sys.stdout.flush()
+
+    class _SpinnerCtx:
+        def __enter__(self):
+            self._thread = threading.Thread(target=_spin, daemon=True)
+            self._thread.start()
+            return self
+
+        def __exit__(self, *args):
+            stop_event.set()
+            self._thread.join(timeout=1)
+
+    return _SpinnerCtx()
+
+
+import fcntl
+
+
+def _save_command_to_rules(cmd: str, agent_name: str, repo_path: str) -> None:
+    """Save an executed command to the agent's project rules file (file-locked)."""
+    from .rules_loader import PROJECT_RULES_DIRNAME
+    rules_dir = Path(repo_path) / PROJECT_RULES_DIRNAME
+    rules_dir.mkdir(parents=True, exist_ok=True)
+    rules_file = rules_dir / f"{agent_name}.md"
+
+    try:
+        # Use file lock to prevent race conditions
+        with open(str(rules_file), "a+") as f:
+            fcntl.flock(f, fcntl.LOCK_EX)
+            try:
+                f.seek(0)
+                existing = f.read()
+
+                if cmd in existing:
+                    print(dim("  (command already in rules)"))
+                    return
+
+                if "## Saved Commands" not in existing:
+                    f.write("\n\n## Saved Commands\nThese commands have been approved and can be auto-run.\n")
+                f.write(f"\n```bash\n{cmd}\n```\n")
+                f.flush()
+            finally:
+                fcntl.flock(f, fcntl.LOCK_UN)
+
+        print(green(f"  ✓ Saved to {rules_file}"))
+    except OSError as e:
+        print(yellow(f"  ! Could not save to rules: {e}"))
+
+
+def _is_command_trusted(cmd: str, agent_name: str, repo_path: str) -> bool:
+    """Check if a command is in the agent's saved/trusted commands (file-locked)."""
+    from .rules_loader import PROJECT_RULES_DIRNAME
+    rules_file = Path(repo_path) / PROJECT_RULES_DIRNAME / f"{agent_name}.md"
+    if not rules_file.is_file():
+        return False
+    try:
+        with open(str(rules_file), "r") as f:
+            fcntl.flock(f, fcntl.LOCK_SH)
+            try:
+                content = f.read()
+            finally:
+                fcntl.flock(f, fcntl.LOCK_UN)
+        return cmd in content
+    except OSError:
+        return False
+
+
+def _ask_yes_no(prompt_text: str, default: bool = True) -> bool:
+    """Interactive Yes/No prompt with numbered options. Returns True for Yes."""
+    print(f"  {bold(prompt_text)}")
+    print(f"    {bold('1.')} Yes")
+    print(f"    {bold('2.')} No")
+
+    try:
+        answer = input(f"  {dim('Choose [1/2]')}: ").strip().lower()
+    except (EOFError, KeyboardInterrupt):
+        print()
+        return False
+
+    if not answer:
+        return default
+    if answer in ("1", "y", "yes"):
+        return True
+    if answer in ("2", "n", "no"):
+        return False
+    return default
+
+
+def _render_markdown(text: str) -> str:
+    """Render basic markdown to terminal ANSI: **bold**, `code`, ## headers."""
+    if not _USE_COLOR:
+        return text
+    # Bold: **text** → ANSI bold
+    text = re.sub(r'\*\*(.+?)\*\*', lambda m: bold(m.group(1)), text)
+    # Inline code: `text` → cyan
+    text = re.sub(r'`([^`]+)`', lambda m: cyan(m.group(1)), text)
+    # Headers: ## Title → bold
+    text = re.sub(r'^(#{1,4})\s+(.+)$', lambda m: bold(m.group(2)), text, flags=re.MULTILINE)
+    return text
 
 
 def _visible_len(text: str) -> int:
@@ -650,15 +770,16 @@ def _resolve_placeholders(cmd: str) -> Optional[str]:
     return cmd
 
 
-def _offer_run_commands(commands: list[str], cwd: str) -> list[dict[str, str]]:
+def _offer_run_commands(
+    commands: list[str], cwd: str,
+    agent_name: str = "",
+) -> list[dict[str, str]]:
     """
-    Offer to run detected shell commands one at a time (Claude Code style).
+    Offer to run detected shell commands one at a time.
 
-    For each command:
-      1. Show the command in a bordered box
-      2. Ask "Run this command? [Y/n]" (default yes, like Claude Code)
-      3. Run it if approved, show output in box
-      4. Feed result back
+    - If command is already saved in agent's project rules → auto-run (no prompt)
+    - If not trusted → ask 1. Yes / 2. No → if approved, auto-save to rules
+    - Saved commands are per-agent, per-repo (in .code-agents/rules/{agent}.md)
 
     Returns list of executed results for the agentic feedback loop.
     """
@@ -668,32 +789,39 @@ def _offer_run_commands(commands: list[str], cwd: str) -> list[dict[str, str]]:
         return results
 
     for cmd in commands:
-        # Show the command proposal
         import shutil
+        import textwrap
         term_width = shutil.get_terminal_size((80, 24)).columns
         box_width = min(term_width - 4, 100)
         inner = box_width - 2
 
-        display = cmd if len(cmd) <= inner - 4 else cmd[:inner - 7] + "..."
+        # Check if this command is already trusted (saved in rules)
+        trusted = _is_command_trusted(cmd, agent_name, cwd) if agent_name else False
 
+        # Show the command in a box
         print(red(f"  ┌{'─' * box_width}┐"))
-        pad = max(0, inner - _visible_len(f" $ {display}") - 1)
-        print(red(f"  │") + f" {bold('$')} {cyan(display)}" + " " * pad + red("│"))
+        cmd_lines = textwrap.wrap(cmd, width=inner - 3)
+        for idx, line in enumerate(cmd_lines):
+            if idx == 0:
+                prefix = f" {bold('$')} {cyan(line)}"
+                vis_len = len(f" $ {line}")
+            else:
+                prefix = f"   {cyan(line)}"
+                vis_len = len(f"   {line}")
+            pad = max(0, inner - vis_len)
+            print(red(f"  │") + prefix + " " * pad + red("│"))
         print(red(f"  └{'─' * box_width}┘"))
 
-        # Ask for approval (default: yes, like Claude Code)
-        try:
-            answer = input(
-                f"  {bold('Run this command?')} {dim('[Y/n]')}: "
-            ).strip().lower()
-        except (EOFError, KeyboardInterrupt):
-            print()
-            return results
-
-        if answer in ("n", "no"):
-            print(dim("  Skipped."))
-            print()
-            continue
+        if trusted:
+            # Auto-approved — command is in the agent's rules
+            print(f"  {green('● Auto-approved')} {dim('(saved in rules)')}")
+        else:
+            # Ask for approval
+            approved = _ask_yes_no("Run this command?", default=True)
+            if not approved:
+                print(dim("  Skipped."))
+                print()
+                continue
 
         # Resolve placeholders if any
         resolved = _resolve_placeholders(cmd)
@@ -704,6 +832,10 @@ def _offer_run_commands(commands: list[str], cwd: str) -> list[dict[str, str]]:
         output = _run_single_command(resolved, cwd)
         results.append({"command": resolved, "output": output})
 
+        # Auto-save RESOLVED command (not the one with placeholders)
+        if not trusted and agent_name and cwd:
+            _save_command_to_rules(resolved, agent_name, cwd)
+
     return results
 
 
@@ -711,6 +843,9 @@ def _run_single_command(cmd: str, cwd: str) -> str:
     """Run a single shell command, display in red box, and return raw output."""
     import subprocess
     import shutil
+
+    # Green BASH indicator
+    print(f"  {bold(green('● BASH'))} {dim('running...')}")
 
     term_width = shutil.get_terminal_size((80, 24)).columns
     box_width = min(term_width - 4, 100)
@@ -751,10 +886,19 @@ def _run_single_command(cmd: str, cwd: str) -> str:
             display_lines.extend(result.stderr.splitlines())
 
         if display_lines:
-            for line in display_lines[:50]:
+            for line in display_lines:
                 print(_box_line(line))
-            if len(display_lines) > 50:
-                print(_box_line(f"... ({len(display_lines) - 50} more lines)"))
+
+            # Copy full output to clipboard (macOS pbcopy)
+            if result.stdout:
+                try:
+                    subprocess.run(
+                        ["pbcopy"], input=result.stdout.encode(),
+                        capture_output=True, timeout=2,
+                    )
+                    print(_box_line(dim("(copied to clipboard)")))
+                except Exception:
+                    pass
 
         if result.returncode != 0:
             status = red(f"  │ ✗ Exit code: {result.returncode}")
@@ -931,9 +1075,13 @@ def _handle_command(cmd: str, state: dict, url: str) -> Optional[str]:
         print(f"    {cyan('/agents'):<16} List all available agents")
         print(f"    {cyan('/run <cmd>'):<16} Run a shell command in the repo directory")
         print(f"    {cyan('/exec <cmd>'):<16} Run command and send output to agent for analysis")
+        print(f"    {cyan('/open'):<16} View last response in pager (less/editor)")
         print(f"    {cyan('/restart'):<16} Restart the server")
         print(f"    {cyan('/rules'):<16} Show active rules for current agent")
         print(f"    {cyan('/session'):<16} Show current session ID")
+        print(f"    {cyan('/history'):<16} List previous chat sessions")
+        print(f"    {cyan('/resume <id>'):<16} Resume a chat by session ID")
+        print(f"    {cyan('/delete-chat <id>'):<16} Delete a chat by session ID")
         print(f"    {cyan('/clear'):<16} Clear session (fresh start, same agent)")
         print(f"    {cyan('/help'):<16} Show this help")
         print()
@@ -992,7 +1140,97 @@ def _handle_command(cmd: str, state: dict, url: str) -> Optional[str]:
 
     elif command == "/clear":
         state["session_id"] = None
+        state["_chat_session"] = None
         print(green("  ✓ Session cleared. Next message starts fresh."))
+
+    elif command == "/open":
+        # Open last output in pager or editor
+        last_output = state.get("_last_output", "")
+        if not last_output:
+            print(dim("  No output to view."))
+            return None
+        import tempfile
+        import subprocess as _sp
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False, prefix="code-agents-") as f:
+            f.write(last_output)
+            tmp_path = f.name
+        pager = os.environ.get("PAGER", "less -R")
+        try:
+            _sp.run(pager.split() + [tmp_path])
+        except FileNotFoundError:
+            # Fallback: try open on macOS
+            try:
+                _sp.run(["open", tmp_path])
+            except FileNotFoundError:
+                print(f"  {dim(f'Saved to: {tmp_path}')}")
+        finally:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+
+    elif command == "/history":
+        from .chat_history import list_sessions as _list_sessions
+        repo = state.get("repo_path")
+        show_all = arg == "--all"
+        sessions = _list_sessions(limit=15, repo_path=None if show_all else repo)
+        print()
+        if not sessions:
+            print(dim("  No chat history found."))
+        else:
+            print(bold("  Recent chats:"))
+            print()
+            for i, s in enumerate(sessions, 1):
+                ts = datetime.fromtimestamp(s["updated_at"]).strftime("%b %d %H:%M")
+                agent_label = cyan(s["agent"])
+                msg_count = s["message_count"]
+                title = s["title"]
+                repo_name = os.path.basename(s.get("repo_path", ""))
+                sid = s["id"]
+                print(f"    {cyan(sid)}")
+                print(f"      {title}")
+                print(f"      {agent_label}  {dim(f'{msg_count} msgs')}  {dim(ts)}  {dim(repo_name)}")
+            print()
+            print(dim("  Use /resume <session-id> to continue a chat"))
+            if not show_all:
+                print(dim("  Use /history --all to show chats from all repos"))
+        print()
+
+    elif command == "/resume":
+        if not arg:
+            print(yellow("  Usage: /resume <session-id>  (from /history list)"))
+            return None
+        from .chat_history import load_session as _load_sess
+        loaded = _load_sess(arg.strip())
+        if loaded:
+            state["agent"] = loaded["agent"]
+            state["session_id"] = loaded.get("_server_session_id")
+            state["_chat_session"] = loaded
+            print()
+            print(green(f"  \u2713 Resumed: {bold(loaded['title'])}"))
+            print(f"    Agent: {cyan(loaded['agent'])}  Messages: {len(loaded['messages'])}")
+            recent = loaded["messages"][-4:]
+            if recent:
+                print()
+                print(dim("  Recent context:"))
+                for msg in recent:
+                    role_label = green("you") if msg["role"] == "user" else magenta(loaded["agent"])
+                    preview = msg["content"][:100]
+                    if len(msg["content"]) > 100:
+                        preview += "..."
+                    print(f"    {bold(role_label)} \u203a {dim(preview)}")
+            print()
+        else:
+            print(red(f"  Session '{arg}' not found. Use /history to list sessions."))
+    elif command == "/delete-chat":
+        if not arg:
+            print(yellow("  Usage: /delete-chat <session-id>  (from /history list)"))
+            return None
+        from .chat_history import delete_session as _del
+        if _del(arg.strip()):
+            print(green(f"  ✓ Deleted session: {arg.strip()}"))
+        else:
+            print(red(f"  Session '{arg}' not found. Use /history to list sessions."))
 
     elif command == "/rules":
         from .rules_loader import list_rules
@@ -1136,6 +1374,13 @@ def chat_main(args: list[str] | None = None):
             agent_name = a
             break
 
+    # Check for --resume flag
+    _resume_id = None
+    for i, a in enumerate(args):
+        if a == "--resume" and i + 1 < len(args):
+            _resume_id = args[i + 1]
+            break
+
     if agent_name and agent_name not in agents:
         print(red(f"  Agent '{agent_name}' not found."))
         agent_name = None
@@ -1175,10 +1420,39 @@ def chat_main(args: list[str] | None = None):
         "agent": agent_name,
         "session_id": None,
         "repo_path": repo_path,
+        "_chat_session": None,
     }
 
+    # Handle --resume flag: load a previous session by UUID
+    if _resume_id:
+        from .chat_history import load_session as _load_sess
+        loaded = _load_sess(_resume_id.strip())
+        if loaded:
+            state["agent"] = loaded["agent"]
+            state["session_id"] = loaded.get("_server_session_id")
+            state["_chat_session"] = loaded
+            agent_name = loaded["agent"]
+            print()
+            print(green(f"  ✓ Resumed: {bold(loaded['title'])}"))
+            print(f"    Agent: {cyan(loaded['agent'])}  Messages: {len(loaded['messages'])}")
+            recent = loaded["messages"][-4:]
+            if recent:
+                print()
+                print(dim("  Recent context:"))
+                for msg in recent:
+                    role_label = green("you") if msg["role"] == "user" else magenta(loaded["agent"])
+                    preview = msg["content"][:100]
+                    if len(msg["content"]) > 100:
+                        preview += "..."
+                    print(f"    {bold(role_label)} › {dim(preview)}")
+            print()
+        else:
+            print(red(f"  Session '{_resume_id}' not found."))
+            print(dim("  Use 'code-agents sessions' to see session IDs."))
+            return
+
     # Tab-completion for slash commands and agent names
-    _slash_commands = ["/help", "/quit", "/exit", "/agents", "/agent", "/run", "/exec", "/execute", "/restart", "/rules", "/session", "/clear"]
+    _slash_commands = ["/help", "/quit", "/exit", "/agents", "/agent", "/run", "/exec", "/execute", "/open", "/restart", "/rules", "/session", "/clear", "/history", "/resume", "/delete-chat"]
     _completer = _make_completer(_slash_commands, list(agents.keys()))
     _has_readline = False
 
@@ -1216,7 +1490,7 @@ def chat_main(args: list[str] | None = None):
         print(f"           {yellow('No git repo detected — agent has no project context')}")
     print(f"  Server:  {dim(url)}")
     print()
-    print(dim("  Commands: /help /quit /agents /agent <name> /session /clear"))
+    print(dim("  Commands: /help /quit /agents /agent <name> /history /resume /clear"))
     print()
 
     # Welcome message
@@ -1239,6 +1513,13 @@ def chat_main(args: list[str] | None = None):
 
             if not user_input:
                 continue
+
+            # Auto-save: ensure a chat session exists and save user message
+            if not state.get("_chat_session"):
+                from .chat_history import create_session
+                state["_chat_session"] = create_session(state["agent"], state["repo_path"])
+            from .chat_history import add_message as _add_msg
+            _add_msg(state["_chat_session"], "user", user_input)
 
             # Slash commands
             if user_input.startswith("/"):
@@ -1278,7 +1559,7 @@ def chat_main(args: list[str] | None = None):
                         if piece_type == "text":
                             got_text = True
                             delegate_response.append(piece_content)
-                            sys.stdout.write(piece_content)
+                            sys.stdout.write(_render_markdown(piece_content))
                             sys.stdout.flush()
                         elif piece_type == "reasoning":
                             sys.stdout.write(f"\n    {dim(piece_content.strip())}")
@@ -1294,7 +1575,7 @@ def chat_main(args: list[str] | None = None):
                     if delegate_response:
                         cmds = _extract_commands("".join(delegate_response))
                         if cmds:
-                            _offer_run_commands(cmds, state.get("repo_path", cwd))
+                            _offer_run_commands(cmds, state.get("repo_path", cwd), agent_name=delegate_agent)
 
                     # Back to current agent — no state change
                     current = state["agent"]
@@ -1344,7 +1625,7 @@ def chat_main(args: list[str] | None = None):
                             cwd=state.get("repo_path"),
                         ):
                             if piece_type == "text":
-                                sys.stdout.write(piece_content)
+                                sys.stdout.write(_render_markdown(piece_content))
                                 sys.stdout.flush()
                             elif piece_type == "reasoning":
                                 sys.stdout.write(f"\n    {dim(piece_content.strip())}")
@@ -1362,16 +1643,48 @@ def chat_main(args: list[str] | None = None):
             repo = state.get("repo_path", cwd)
             current_agent = state["agent"]
             system_context = _build_system_context(repo, current_agent)
-            messages = [
-                {"role": "system", "content": system_context},
-                {"role": "user", "content": user_input},
-            ]
 
-            # Stream response
+            # Send full conversation history (like Claude CLI)
+            messages = [{"role": "system", "content": system_context}]
+            chat_session = state.get("_chat_session")
+            if chat_session and chat_session.get("messages"):
+                for hist_msg in chat_session["messages"]:
+                    # Skip current message (already being added below)
+                    if hist_msg.get("role") in ("user", "assistant"):
+                        messages.append({"role": hist_msg["role"], "content": hist_msg["content"]})
+            # Only add current user_input if not already the last message in history
+            if not messages or messages[-1].get("content") != user_input:
+                messages.append({"role": "user", "content": user_input})
+
+            # Stream response with spinner + live timer
             current_agent = state["agent"]
             agent_label = bold(magenta(current_agent))
-            sys.stdout.write(f"\n  {agent_label} › ")
-            sys.stdout.flush()
+            import threading
+            import itertools
+            import time as _time
+            _response_start = _time.monotonic()
+            _stop_spin = threading.Event()
+
+            def _format_elapsed(seconds: float) -> str:
+                if seconds < 60:
+                    return f"{seconds:.0f}s"
+                m, s = divmod(int(seconds), 60)
+                return f"{m}m {s:02d}s"
+
+            def _show_spinner():
+                frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+                for frame in itertools.cycle(frames):
+                    if _stop_spin.is_set():
+                        break
+                    elapsed = _time.monotonic() - _response_start
+                    sys.stdout.write(f"\r  {yellow(frame)} {dim(f'Thinking... {_format_elapsed(elapsed)}')}")
+                    sys.stdout.flush()
+                    _stop_spin.wait(0.1)
+                sys.stdout.write(f"\r{' ' * 40}\r")
+                sys.stdout.flush()
+
+            spin_thread = threading.Thread(target=_show_spinner, daemon=True)
+            spin_thread.start()
 
             got_text = False
             full_response: list[str] = []
@@ -1380,35 +1693,121 @@ def chat_main(args: list[str] | None = None):
                 cwd=state.get("repo_path"),
             ):
                 if piece_type == "text":
+                    if not got_text:
+                        # Stop spinner, show agent label
+                        _stop_spin.set()
+                        spin_thread.join(timeout=1)
+                        sys.stdout.write(f"  {agent_label} › ")
+                        sys.stdout.flush()
                     got_text = True
                     full_response.append(piece_content)
-                    sys.stdout.write(piece_content)
+                    sys.stdout.write(_render_markdown(piece_content))
                     sys.stdout.flush()
 
                 elif piece_type == "reasoning":
+                    # Stop spinner if still running
+                    if not _stop_spin.is_set():
+                        _stop_spin.set()
+                        spin_thread.join(timeout=1)
                     # Show tool activity in dimmed style
-                    if "Using tool:" in piece_content:
-                        sys.stdout.write(f"\n    {dim(piece_content.strip())}")
-                    else:
-                        sys.stdout.write(f"\n    {dim(piece_content.strip())}")
+                    sys.stdout.write(f"\n    {dim(piece_content.strip())}")
                     sys.stdout.flush()
 
                 elif piece_type == "session_id":
                     state["session_id"] = piece_content
 
                 elif piece_type == "error":
+                    if not _stop_spin.is_set():
+                        _stop_spin.set()
+                        spin_thread.join(timeout=1)
                     print(red(f"\n  Error: {piece_content}"))
+
+            # Ensure spinner is stopped
+            if not _stop_spin.is_set():
+                _stop_spin.set()
+                spin_thread.join(timeout=1)
 
             if got_text:
                 print()  # Newline after response
-            print()  # Blank line between turns
+
+            # Save last response
+            full_text = "".join(full_response) if full_response else ""
+            state["_last_output"] = full_text
+
+            # Auto-save agent response to chat history
+            if full_text and state.get("_chat_session"):
+                from .chat_history import add_message as _save_msg
+                _save_msg(state["_chat_session"], "assistant", full_text)
+                # Persist server session_id for potential resume
+                if state.get("session_id"):
+                    state["_chat_session"]["_server_session_id"] = state["session_id"]
+                    from .chat_history import _save as _persist
+                    _persist(state["_chat_session"])
+
+            # Auto-collapse long responses (like Claude Code)
+            response_lines = full_text.splitlines()
+            if len(response_lines) > 25:
+                # Clear the streamed output and show collapsed view
+                # Move cursor up to clear streamed lines + agent label
+                lines_to_clear = len(response_lines) + 2  # +2 for agent label + newline
+                for _ in range(lines_to_clear):
+                    sys.stdout.write(f"\033[A\033[2K")  # move up + clear line
+                sys.stdout.flush()
+
+                # Show collapsed preview
+                print(f"  {agent_label} › ", end="")
+                # First 8 lines
+                for line in response_lines[:8]:
+                    print(f"  {_render_markdown(line)}")
+                print(f"  {dim(f'  ... ({len(response_lines) - 16} lines collapsed) ...')}")
+                # Last 8 lines
+                for line in response_lines[-8:]:
+                    print(f"  {_render_markdown(line)}")
+                print()
+                print(f"  {dim(f'Press Ctrl+O to expand full response ({len(response_lines)} lines)')}")
+
+                # Wait for Ctrl+O or Enter
+                try:
+                    import tty
+                    import termios
+                    fd = sys.stdin.fileno()
+                    old_settings = termios.tcgetattr(fd)
+                    try:
+                        tty.setraw(fd)
+                        ch = sys.stdin.read(1)
+                        if ord(ch) == 15:  # Ctrl+O
+                            # Restore terminal
+                            termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+                            # Show full output in pager
+                            import tempfile
+                            import subprocess as _sp_pager
+                            with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False, prefix="code-agents-") as f:
+                                f.write(full_text)
+                                tmp_path = f.name
+                            pager = os.environ.get("PAGER", "less -R")
+                            _sp_pager.run(pager.split() + [tmp_path])
+                            try:
+                                os.unlink(tmp_path)
+                            except OSError:
+                                pass
+                        # Any other key = continue with collapsed view
+                    finally:
+                        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+                except (ImportError, OSError, ValueError):
+                    pass  # Not a TTY or Windows — skip collapse feature
+                print()
+
+            # Show elapsed time
+            elapsed = _time.monotonic() - _response_start
+            print(f"  {dim(f'✻ Response took {_format_elapsed(elapsed)}')}")
+            print()
 
             # Agentic loop: detect commands → run → feed output back → agent continues
             if full_response:
                 commands = _extract_commands("".join(full_response))
                 if commands:
                     try:
-                        exec_results = _offer_run_commands(commands, state.get("repo_path", cwd))
+                        exec_results = _offer_run_commands(commands, state.get("repo_path", cwd), agent_name=current_agent)
                     except (EOFError, KeyboardInterrupt):
                         print()
                         exec_results = []
@@ -1449,7 +1848,7 @@ def chat_main(args: list[str] | None = None):
                             cwd=state.get("repo_path"),
                         ):
                             if piece_type == "text":
-                                sys.stdout.write(piece_content)
+                                sys.stdout.write(_render_markdown(piece_content))
                                 sys.stdout.flush()
                             elif piece_type == "reasoning":
                                 sys.stdout.write(f"\n    {dim(piece_content.strip())}")
