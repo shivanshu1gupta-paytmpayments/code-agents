@@ -2,7 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
-[![Tests: 199 passing](https://img.shields.io/badge/tests-199%20passing-brightgreen.svg)]()
+[![Tests: 201 passing](https://img.shields.io/badge/tests-201%20passing-brightgreen.svg)]()
 
 AI-powered code agent platform with interactive chat and a built-in CI/CD pipeline. Define agents in YAML, chat with them from the terminal, and automate: **review → test → build → deploy → verify → rollback**.
 
@@ -227,7 +227,7 @@ Full list: `.env.example`
 ## Testing
 
 ```bash
-poetry run pytest       # 199 tests
+poetry run pytest       # 201 tests
 code-agents doctor      # diagnose setup
 code-agents test        # run tests on target repo
 ```
@@ -260,7 +260,7 @@ code-agents/
     jenkins_build.yaml          jenkins_deploy.yaml
     argocd_verify.yaml          pipeline_orchestrator.yaml
   code_agents/                  # Python package
-    cli.py                      #   CLI: 21 commands (init/migrate/start/chat/shutdown/...)
+    cli.py                      #   CLI: 22 commands (init/migrate/start/chat/shutdown/...)
     chat.py                     #   Interactive chat REPL with streaming + tab-completion
     setup.py                    #   Interactive setup wizard
     main.py                     #   Uvicorn server entry point
@@ -284,7 +284,7 @@ code-agents/
       completions.py  agents_list.py  git_ops.py  testing.py
       jenkins.py  argocd.py  pipeline.py  redash.py
       elasticsearch.py  atlassian_oauth_web.py
-  tests/                        # 199 tests
+  tests/                        # 201 tests
     test_chat.py                #   Chat REPL, slash commands, agent parsing, SSE, delegation, tab-completion
     test_cli.py                 #   CLI commands, help, config, curls, dispatcher
     test_git_client.py          #   Git operations (real temp repos)
