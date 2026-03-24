@@ -283,21 +283,30 @@ def _build_system_context(repo: str, agent_name: str) -> str:
         f"always operate within {repo}.\n"
         f"\n"
         f"--- Bash Tool ---\n"
-        f"You have access to run shell commands on the user's machine.\n"
-        f"To run a command, output it in a ```bash code block. The user will be\n"
-        f"prompted to approve it, and the output will be sent back to you automatically.\n"
-        f"You can then analyze the output and suggest next steps or run more commands.\n"
+        f"CRITICAL: You CANNOT make HTTP requests or network calls directly from your environment.\n"
+        f"The ONLY way to execute commands is by outputting them in ```bash code blocks.\n"
+        f"Commands run on the USER'S MACHINE (which has localhost and network access).\n"
+        f"The output is automatically sent back to you so you can continue.\n"
         f"\n"
-        f"Use this to:\n"
-        f"  - Run curl commands to call APIs\n"
-        f"  - Execute git commands (git status, git log, git diff)\n"
-        f"  - Run tests (pytest, npm test, etc.)\n"
-        f"  - Check file contents (cat, head, grep)\n"
-        f"  - Run build/deploy commands\n"
-        f"  - Any shell command the user needs\n"
+        f"HOW TO USE (follow this pattern exactly):\n"
+        f"  1. Explain what you're about to do in 1 sentence\n"
+        f"  2. Output exactly ONE command in a ```bash block\n"
+        f"  3. STOP and wait — the command will run and output comes back to you\n"
+        f"  4. Analyze the result, then propose the next command if needed\n"
         f"\n"
-        f"Always explain what each command does before outputting it.\n"
-        f"Wait for the command result before continuing your analysis.\n"
+        f"RULES:\n"
+        f"  - Output only ONE ```bash block at a time — never multiple in one response\n"
+        f"  - The user will be asked 'Run this? [y/N]' — like Claude Code's CLI\n"
+        f"  - After approval, output is fed back to you automatically\n"
+        f"  - NEVER say 'I cannot reach the server' — output the curl and it will work\n"
+        f"  - NEVER try to call APIs directly — always use ```bash blocks\n"
+        f"\n"
+        f"EXAMPLE:\n"
+        f"  'Let me check the available Jenkins jobs.'\n"
+        f"  ```bash\n"
+        f"  curl -s http://127.0.0.1:8000/jenkins/jobs?folder=pg2/pg2-dev-build-jobs\n"
+        f"  ```\n"
+        f"  (wait for result, then continue)\n"
         f"--- End Bash Tool ---"
     )
     if rules_text:
@@ -643,61 +652,57 @@ def _resolve_placeholders(cmd: str) -> Optional[str]:
 
 def _offer_run_commands(commands: list[str], cwd: str) -> list[dict[str, str]]:
     """
-    Offer to run detected shell commands. Returns list of executed results:
-    [{"command": "...", "output": "..."}]
+    Offer to run detected shell commands one at a time (Claude Code style).
 
-    Results can be fed back to the agent for continued reasoning.
+    For each command:
+      1. Show the command in a bordered box
+      2. Ask "Run this command? [Y/n]" (default yes, like Claude Code)
+      3. Run it if approved, show output in box
+      4. Feed result back
+
+    Returns list of executed results for the agentic feedback loop.
     """
     results: list[dict[str, str]] = []
 
     if not commands:
         return results
 
-    import shutil
-    term_width = shutil.get_terminal_size((80, 24)).columns
-    box_width = min(term_width - 4, 100)
-    inner = box_width - 2
+    for cmd in commands:
+        # Show the command proposal
+        import shutil
+        term_width = shutil.get_terminal_size((80, 24)).columns
+        box_width = min(term_width - 4, 100)
+        inner = box_width - 2
 
-    print(red(f"  ┌{'─' * box_width}┐"))
-    title = f" {bold(cyan('Commands detected:'))}"
-    print(red(f"  │") + title + " " * max(0, inner - len("Commands detected:") - 1) + red("│"))
-    print(red(f"  ├{'─' * box_width}┤"))
-    for i, cmd in enumerate(commands, 1):
-        display = cmd if len(cmd) <= (inner - 6) else cmd[:inner - 9] + "..."
-        line = f" {bold(str(i) + '.')} {cyan(display)}"
-        visible_len = len(f" {i}. {display}")
-        pad = max(0, inner - visible_len)
-        print(red(f"  │") + line + " " * pad + red("│"))
-    print(red(f"  └{'─' * box_width}┘"))
-    print()
+        display = cmd if len(cmd) <= inner - 4 else cmd[:inner - 7] + "..."
 
-    for i, cmd in enumerate(commands, 1):
-        display = cmd if len(cmd) <= 60 else cmd[:57] + "..."
+        print(red(f"  ┌{'─' * box_width}┐"))
+        pad = max(0, inner - _visible_len(f" $ {display}") - 1)
+        print(red(f"  │") + f" {bold('$')} {cyan(display)}" + " " * pad + red("│"))
+        print(red(f"  └{'─' * box_width}┘"))
+
+        # Ask for approval (default: yes, like Claude Code)
         try:
             answer = input(
-                f"  Run [{bold(str(i))}] {display}? [y/N/all/skip]: "
+                f"  {bold('Run this command?')} {dim('[Y/n]')}: "
             ).strip().lower()
         except (EOFError, KeyboardInterrupt):
             print()
             return results
 
-        if answer == "skip":
-            print(dim("  Skipped remaining commands."))
-            return results
-        elif answer == "all":
-            for remaining_cmd in commands[i - 1:]:
-                resolved = _resolve_placeholders(remaining_cmd)
-                if resolved:
-                    output = _run_single_command(resolved, cwd)
-                    results.append({"command": resolved, "output": output})
-            return results
-        elif answer in ("y", "yes"):
-            resolved = _resolve_placeholders(cmd)
-            if resolved:
-                output = _run_single_command(resolved, cwd)
-                results.append({"command": resolved, "output": output})
-        else:
-            print(dim(f"  Skipped."))
+        if answer in ("n", "no"):
+            print(dim("  Skipped."))
+            print()
+            continue
+
+        # Resolve placeholders if any
+        resolved = _resolve_placeholders(cmd)
+        if not resolved:
+            continue
+
+        # Run it
+        output = _run_single_command(resolved, cwd)
+        results.append({"command": resolved, "output": output})
 
     return results
 

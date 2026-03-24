@@ -1472,6 +1472,138 @@ def _print_pipeline_status(data: dict):
         print(f"    {color_fn(icon)} {i}. {name:<20} {color_fn(status)}")
 
 
+def cmd_update():
+    """Update code-agents to the latest version from git."""
+    import subprocess as _sp
+    bold, green, yellow, red, cyan, dim = _colors()
+
+    home = _find_code_agents_home()
+    print()
+    print(bold(cyan("  Updating Code Agents...")))
+    print(f"  Install dir: {dim(str(home))}")
+    print()
+
+    # Check if it's a git repo
+    if not (home / ".git").is_dir():
+        print(red("  ✗ Not a git repository — cannot update."))
+        print(dim(f"    Re-install: curl -fsSL https://raw.githubusercontent.com/shivanshu1gupta-paytmpayments/code-agents/main/install.sh | bash"))
+        return
+
+    # Save current commit
+    old_commit = _sp.run(
+        ["git", "rev-parse", "--short", "HEAD"],
+        cwd=str(home), capture_output=True, text=True,
+    ).stdout.strip()
+
+    # Check current branch
+    current_branch = _sp.run(
+        ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+        cwd=str(home), capture_output=True, text=True,
+    ).stdout.strip() or "main"
+
+    # Check remote URL and fix SSH → HTTPS if SSH fails
+    remote_url = _sp.run(
+        ["git", "remote", "get-url", "origin"],
+        cwd=str(home), capture_output=True, text=True,
+    ).stdout.strip()
+    print(f"  Remote: {dim(remote_url)}")
+    print(f"  Branch: {dim(current_branch)}")
+    print()
+
+    # Pull latest — try current remote first
+    print(dim("  Pulling latest changes..."))
+    pull = _sp.run(
+        ["git", "pull", "origin", current_branch],
+        cwd=str(home), capture_output=True, text=True,
+        timeout=30,
+    )
+
+    # If SSH fails, try switching to HTTPS
+    if pull.returncode != 0 and "git@github.com:" in remote_url:
+        https_url = remote_url.replace("git@github.com:", "https://github.com/")
+        if not https_url.endswith(".git"):
+            https_url += ".git"
+        print(yellow("  SSH failed — trying HTTPS..."))
+        _sp.run(
+            ["git", "remote", "set-url", "origin", https_url],
+            cwd=str(home), capture_output=True, text=True,
+        )
+        pull = _sp.run(
+            ["git", "pull", "origin", current_branch],
+            cwd=str(home), capture_output=True, text=True,
+            timeout=30,
+        )
+        if pull.returncode != 0:
+            # Restore original URL
+            _sp.run(
+                ["git", "remote", "set-url", "origin", remote_url],
+                cwd=str(home), capture_output=True, text=True,
+            )
+
+    if pull.returncode != 0:
+        print(red(f"  ✗ git pull failed:"))
+        for line in (pull.stderr or pull.stdout).splitlines()[:5]:
+            print(f"    {line}")
+        print()
+        print(dim("  Possible fixes:"))
+        print(dim("    1. Check internet connection / VPN"))
+        print(dim("    2. Switch to HTTPS: git remote set-url origin https://github.com/shivanshu1gupta-paytmpayments/code-agents.git"))
+        print(dim("    3. Re-install: curl -fsSL https://raw.githubusercontent.com/shivanshu1gupta-paytmpayments/code-agents/main/install.sh | bash"))
+        print()
+        return
+
+    new_commit = _sp.run(
+        ["git", "rev-parse", "--short", "HEAD"],
+        cwd=str(home), capture_output=True, text=True,
+    ).stdout.strip()
+
+    if old_commit == new_commit:
+        print(green("  ✓ Already up to date."))
+        print()
+        return
+
+    # Show what changed
+    changed = _sp.run(
+        ["git", "diff", "--stat", f"{old_commit}..{new_commit}"],
+        cwd=str(home), capture_output=True, text=True,
+    ).stdout.strip()
+    commits = _sp.run(
+        ["git", "log", "--oneline", f"{old_commit}..{new_commit}"],
+        cwd=str(home), capture_output=True, text=True,
+    ).stdout.strip()
+
+    if commits:
+        print(bold("  New commits:"))
+        for line in commits.splitlines():
+            print(f"    {dim(line)}")
+        print()
+
+    if changed:
+        # Count files
+        lines = changed.splitlines()
+        print(f"  {bold(str(len(lines) - 1))} file(s) changed")
+        print()
+
+    # Reinstall dependencies
+    print(dim("  Installing dependencies..."))
+    install = _sp.run(
+        ["poetry", "install", "--quiet"],
+        cwd=str(home), capture_output=True, text=True,
+    )
+    if install.returncode != 0:
+        print(yellow(f"  ! poetry install had issues:"))
+        for line in install.stderr.splitlines()[:5]:
+            print(f"    {line}")
+    else:
+        print(green("  ✓ Dependencies updated."))
+
+    print()
+    print(green(bold(f"  ✓ Updated: {old_commit} → {new_commit}")))
+    print()
+    print(dim("  Restart the server to apply: code-agents restart"))
+    print()
+
+
 def cmd_version():
     """Show version info."""
     bold, green, _, _, cyan, dim = _colors()
@@ -1917,6 +2049,7 @@ COMMANDS = {
     "pipeline":  ("Manage CI/CD pipeline [start|status|advance|rollback]", None),
     "setup":     ("Full interactive setup wizard",                  None),
     "curls":     ("Show all API curl commands",                     cmd_curls),
+    "update":    ("Update code-agents to latest version",            cmd_update),
     "version":   ("Show version info",                              cmd_version),
     "completions": ("Generate shell completion script",             None),  # special handling
 }
@@ -2347,6 +2480,11 @@ def cmd_help():
     p(f"      {dim('$ code-agents curls code-reviewer     # curls for code-reviewer')}")
     p(f"      {dim('$ code-agents curls pipeline          # pipeline curls only')}")
     p()
+    p(f"    {cyan('update')}")
+    p(f"      Update code-agents to latest version from git.")
+    p(f"      Pulls latest code, reinstalls dependencies, shows changelog.")
+    p(f"      {dim('$ code-agents update')}")
+    p()
     p(f"    {cyan('version')}")
     p(f"      Show version, Python version, and install location.")
     p(f"      {dim('$ code-agents version')}")
@@ -2384,6 +2522,8 @@ def main():
     try:
         if command in ("--help", "-h", "help"):
             cmd_help()
+        elif command == "update":
+            cmd_update()
         elif command in ("--version", "-v", "version"):
             cmd_version()
         elif command == "init":
