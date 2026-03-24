@@ -84,16 +84,45 @@ def _api_post(path: str, body: dict | None = None) -> dict | list | None:
 # ============================================================================
 
 
+_INIT_SECTIONS = {
+    "--backend":  "Backend API keys (Cursor/Claude)",
+    "--server":   "Server host and port",
+    "--jenkins":  "Jenkins CI/CD build and deploy",
+    "--argocd":   "ArgoCD deployment verification",
+    "--redash":   "Redash database queries",
+    "--elastic":  "Elasticsearch integration",
+    "--atlassian": "Atlassian OAuth (Jira/Confluence)",
+    "--testing":  "Testing overrides (command, coverage threshold)",
+}
+
+
 def cmd_init():
-    """Initialize code-agents in the current repository."""
+    """Initialize code-agents in the current repository.
+
+    Usage:
+      code-agents init               # full wizard (all sections)
+      code-agents init --jenkins     # update Jenkins config only
+      code-agents init --redash      # update Redash config only
+      code-agents init --argocd      # update ArgoCD config only
+      code-agents init --backend     # update API keys only
+      code-agents init --server      # update host/port only
+      code-agents init --elastic     # update Elasticsearch only
+      code-agents init --atlassian   # update Atlassian OAuth only
+      code-agents init --testing     # update test command/threshold only
+    """
     from .setup import (
         prompt, prompt_yes_no, prompt_choice, prompt_cicd_pipeline,
-        prompt_integrations, write_env_file, validate_url,
+        prompt_integrations, write_env_file, validate_url, validate_port,
     )
     bold, green, yellow, red, cyan, dim = _colors()
 
     cwd = _user_cwd()
     code_agents_home = _find_code_agents_home()
+    args = sys.argv[2:]  # everything after 'init'
+
+    # Determine which sections to run
+    section_flags = [a for a in args if a.startswith("--") and a in _INIT_SECTIONS]
+    run_all = not section_flags  # no flags = full wizard
 
     print()
     print(bold(cyan("  ╔══════════════════════════════════════════════╗")))
@@ -101,42 +130,146 @@ def cmd_init():
     print(bold(cyan("  ╚══════════════════════════════════════════════╝")))
     print()
 
-    if os.path.isdir(os.path.join(cwd, ".git")):
-        print(green(f"  ✓ Git repo detected: {cwd}"))
+    if run_all:
+        if os.path.isdir(os.path.join(cwd, ".git")):
+            print(green(f"  ✓ Git repo detected: {cwd}"))
+        else:
+            print(yellow(f"  ! No .git found in: {cwd}"))
+            if not prompt_yes_no("Continue anyway?", default=False):
+                print(yellow("  Cancelled."))
+                return
+        print(f"  Code Agents installed at: {dim(str(code_agents_home))}")
     else:
-        print(yellow(f"  ! No .git found in: {cwd}"))
-        if not prompt_yes_no("Continue anyway?", default=False):
-            print(yellow("  Cancelled."))
-            return
-
-    print(f"  Code Agents installed at: {dim(str(code_agents_home))}")
+        sections_desc = ", ".join(_INIT_SECTIONS[f] for f in section_flags)
+        print(f"  Updating: {bold(sections_desc)}")
+        print(f"  Repo: {cwd}")
     print()
 
-    env_vars: dict[str, str] = {"TARGET_REPO_PATH": cwd}
+    # Load existing config to merge with
+    from .env_loader import GLOBAL_ENV_PATH, PER_REPO_FILENAME
+    from .setup import parse_env_file
+    existing_global = parse_env_file(GLOBAL_ENV_PATH) if GLOBAL_ENV_PATH.is_file() else {}
+    existing_repo = parse_env_file(Path(os.path.join(cwd, PER_REPO_FILENAME))) if os.path.isfile(os.path.join(cwd, PER_REPO_FILENAME)) else {}
+    existing = {**existing_global, **existing_repo}
+
+    env_vars: dict[str, str] = {}
 
     # Backend
-    print(bold("  Backend Configuration"))
-    choice = prompt_choice("Which backend?", ["Cursor (default)", "Claude", "Both"], default=1)
-    if choice in (1, 3):
-        env_vars["CURSOR_API_KEY"] = prompt("CURSOR_API_KEY", secret=True, required=True)
-        url = prompt("Cursor API URL (blank for CLI mode)", validator=validate_url, error_msg="Must be a valid URL")
-        if url:
-            env_vars["CURSOR_API_URL"] = url
-    if choice in (2, 3):
-        env_vars["ANTHROPIC_API_KEY"] = prompt("ANTHROPIC_API_KEY", secret=True, required=True)
-    print()
+    if run_all or "--backend" in section_flags:
+        print(bold("  Backend Configuration"))
+        choice = prompt_choice("Which backend?", ["Cursor (default)", "Claude", "Both"], default=1)
+        if choice in (1, 3):
+            env_vars["CURSOR_API_KEY"] = prompt("CURSOR_API_KEY", default=existing.get("CURSOR_API_KEY", ""), secret=True, required=True)
+            url = prompt("Cursor API URL (blank for CLI mode)", default=existing.get("CURSOR_API_URL", ""), validator=validate_url, error_msg="Must be a valid URL")
+            if url:
+                env_vars["CURSOR_API_URL"] = url
+        if choice in (2, 3):
+            env_vars["ANTHROPIC_API_KEY"] = prompt("ANTHROPIC_API_KEY", default=existing.get("ANTHROPIC_API_KEY", ""), secret=True, required=True)
+        print()
 
     # Server
-    print(bold("  Server Configuration"))
-    env_vars["HOST"] = prompt("HOST", default="0.0.0.0")
-    env_vars["PORT"] = prompt("PORT", default="8000")
-    print()
+    if run_all or "--server" in section_flags:
+        print(bold("  Server Configuration"))
+        env_vars["HOST"] = prompt("HOST", default=existing.get("HOST", "0.0.0.0"))
+        env_vars["PORT"] = prompt("PORT", default=existing.get("PORT", "8000"), validator=validate_port, error_msg="Must be 1-65535")
+        print()
 
-    # CI/CD & integrations
-    env_vars.update(prompt_cicd_pipeline())
-    env_vars.update(prompt_integrations())
+    # Jenkins
+    if run_all or "--jenkins" in section_flags:
+        should_configure = True if "--jenkins" in section_flags else prompt_yes_no("Configure Jenkins?", default=False)
+        if should_configure:
+            from .setup import validate_job_path
+            print(dim("    Jenkins base URL without job path"))
+            print(dim("    Example: https://jenkins.pg2nonprod.paytmpayments.in/"))
+            env_vars["JENKINS_URL"] = prompt(
+                "JENKINS_URL",
+                default=existing.get("JENKINS_URL", "https://jenkins.pg2nonprod.paytmpayments.in/"),
+                required=True, validator=validate_url, error_msg="Must be a valid URL.",
+            )
+            print(dim("    Example: shivanshu1.gupta@paytmpayments.com"))
+            env_vars["JENKINS_USERNAME"] = prompt("JENKINS_USERNAME", default=existing.get("JENKINS_USERNAME", ""), required=True)
+            print(dim("    Manage Jenkins → Users → Configure → API Token"))
+            env_vars["JENKINS_API_TOKEN"] = prompt("JENKINS_API_TOKEN", default=existing.get("JENKINS_API_TOKEN", ""), secret=True, required=True)
+            print()
+            print(dim("    Extract folder path from Jenkins URL (no 'job/' prefix)"))
+            print(dim("    Example: pg2/pg2-dev-build-jobs/pg2-dev-pg-acquiring-biz"))
+            env_vars["JENKINS_BUILD_JOB"] = prompt(
+                "JENKINS_BUILD_JOB",
+                default=existing.get("JENKINS_BUILD_JOB", "pg2/pg2-dev-build-jobs/pg2-dev-pg-acquiring-biz"),
+                required=True, validator=validate_job_path,
+                error_msg="Enter folder path, not full URL.",
+            )
+            print(dim("    Deploy job (same as build job if same pipeline)"))
+            env_vars["JENKINS_DEPLOY_JOB"] = prompt(
+                "JENKINS_DEPLOY_JOB",
+                default=existing.get("JENKINS_DEPLOY_JOB", env_vars.get("JENKINS_BUILD_JOB", "")),
+                validator=validate_job_path, error_msg="Enter folder path.",
+            )
+            print()
+
+    # ArgoCD
+    if run_all or "--argocd" in section_flags:
+        should_configure = True if "--argocd" in section_flags else prompt_yes_no("Configure ArgoCD?", default=False)
+        if should_configure:
+            print(dim("    Example: https://argocd-acquiring.pg2prod.paytm.com"))
+            env_vars["ARGOCD_URL"] = prompt("ARGOCD_URL", default=existing.get("ARGOCD_URL", ""), required=True, validator=validate_url, error_msg="Must be a valid URL.")
+            print(dim("    argocd account generate-token --account <user>"))
+            env_vars["ARGOCD_AUTH_TOKEN"] = prompt("ARGOCD_AUTH_TOKEN", default=existing.get("ARGOCD_AUTH_TOKEN", ""), secret=True, required=True)
+            print(dim("    Example: pg-acquiring-biz"))
+            env_vars["ARGOCD_APP_NAME"] = prompt("ARGOCD_APP_NAME", default=existing.get("ARGOCD_APP_NAME", ""), required=True)
+            print()
+
+    # Testing
+    if run_all or "--testing" in section_flags:
+        should_configure = True if "--testing" in section_flags else prompt_yes_no("Configure testing overrides?", default=False)
+        if should_configure:
+            print(dim("    Leave blank for auto-detect (pytest/jest/maven/go)"))
+            print(dim("    Example: pytest --cov --cov-report=xml:coverage.xml"))
+            cmd = prompt("TARGET_TEST_COMMAND", default=existing.get("TARGET_TEST_COMMAND", ""))
+            if cmd:
+                env_vars["TARGET_TEST_COMMAND"] = cmd
+            threshold = prompt("TARGET_COVERAGE_THRESHOLD", default=existing.get("TARGET_COVERAGE_THRESHOLD", "100"))
+            if threshold != "100":
+                env_vars["TARGET_COVERAGE_THRESHOLD"] = threshold
+            print()
+
+    # Integrations (only in full wizard or specific flags)
+    if run_all:
+        env_vars.update(prompt_integrations())
+    else:
+        if "--redash" in section_flags:
+            from .setup import validate_url as _vurl
+            print(bold("  Redash Configuration"))
+            print(dim("    Example: http://10.215.50.126/"))
+            env_vars["REDASH_BASE_URL"] = prompt("REDASH_BASE_URL", default=existing.get("REDASH_BASE_URL", ""), required=True, validator=_vurl, error_msg="Must be a valid URL.")
+            api_key = prompt("REDASH_API_KEY (blank for username/password)", default=existing.get("REDASH_API_KEY", ""))
+            if api_key:
+                env_vars["REDASH_API_KEY"] = api_key
+            else:
+                env_vars["REDASH_USERNAME"] = prompt("REDASH_USERNAME", default=existing.get("REDASH_USERNAME", ""), required=True)
+                env_vars["REDASH_PASSWORD"] = prompt("REDASH_PASSWORD", default=existing.get("REDASH_PASSWORD", ""), secret=True, required=True)
+            print()
+
+        if "--elastic" in section_flags:
+            print(bold("  Elasticsearch Configuration"))
+            env_vars["ELASTICSEARCH_URL"] = prompt("ELASTICSEARCH_URL", default=existing.get("ELASTICSEARCH_URL", ""), required=True)
+            api_key = prompt("ELASTICSEARCH_API_KEY (blank to skip)", default=existing.get("ELASTICSEARCH_API_KEY", ""))
+            if api_key:
+                env_vars["ELASTICSEARCH_API_KEY"] = api_key
+            print()
+
+        if "--atlassian" in section_flags:
+            print(bold("  Atlassian OAuth Configuration"))
+            env_vars["ATLASSIAN_CLOUD_SITE_URL"] = prompt("ATLASSIAN_CLOUD_SITE_URL", default=existing.get("ATLASSIAN_CLOUD_SITE_URL", ""), required=True)
+            env_vars["ATLASSIAN_OAUTH_CLIENT_ID"] = prompt("ATLASSIAN_OAUTH_CLIENT_ID", default=existing.get("ATLASSIAN_OAUTH_CLIENT_ID", ""), required=True)
+            env_vars["ATLASSIAN_OAUTH_CLIENT_SECRET"] = prompt("ATLASSIAN_OAUTH_CLIENT_SECRET", default=existing.get("ATLASSIAN_OAUTH_CLIENT_SECRET", ""), secret=True, required=True)
+            print()
 
     env_vars = {k: v for k, v in env_vars.items() if v}
+
+    if not env_vars:
+        print(dim("  No changes to save."))
+        return
 
     print(bold("━" * 44))
     original_dir = _user_cwd()
@@ -1856,6 +1989,9 @@ _code_agents() {{
         _describe 'command' commands
     elif (( CURRENT == 3 )); then
         case $words[2] in
+            init)
+                compadd -- '--backend' '--server' '--jenkins' '--argocd' '--redash' '--elastic' '--atlassian' '--testing'
+                ;;
             rules)
                 _describe 'subcommand' rules_subcmds
                 ;;
@@ -1907,6 +2043,9 @@ _code_agents_completions() {{
         COMPREPLY=( $(compgen -W "$commands" -- "$cur") )
     elif [[ $COMP_CWORD -eq 2 ]]; then
         case "$prev" in
+            init)
+                COMPREPLY=( $(compgen -W "--backend --server --jenkins --argocd --redash --elastic --atlassian --testing" -- "$cur") )
+                ;;
             rules)
                 COMPREPLY=( $(compgen -W "list create edit delete" -- "$cur") )
                 ;;
@@ -2000,11 +2139,18 @@ def cmd_help():
     p()
     p(f"    {cyan('init')}")
     p(f"      Initialize code-agents in the current repo directory.")
-    p(f"      Prompts for API keys, server config, Jenkins/ArgoCD settings.")
-    p(f"      Global config → ~/.code-agents/config.env")
-    p(f"      Per-repo config → .env.code-agents")
-    p(f"      {dim('$ cd /path/to/your-project')}")
+    p(f"      Run with no flags for full wizard, or specify a section to update:")
+    p(f"        {dim('--backend')}    API keys (Cursor/Claude)")
+    p(f"        {dim('--server')}     Host and port")
+    p(f"        {dim('--jenkins')}    Jenkins CI/CD build and deploy")
+    p(f"        {dim('--argocd')}     ArgoCD deployment verification")
+    p(f"        {dim('--redash')}     Redash database queries")
+    p(f"        {dim('--elastic')}    Elasticsearch integration")
+    p(f"        {dim('--atlassian')}  Atlassian OAuth")
+    p(f"        {dim('--testing')}    Test command and coverage threshold")
     p(f"      {dim('$ code-agents init')}")
+    p(f"      {dim('$ code-agents init --jenkins')}")
+    p(f"      {dim('$ code-agents init --jenkins --argocd')}")
     p()
     p(f"    {cyan('migrate')}")
     p(f"      Migrate a legacy .env file to centralized config.")

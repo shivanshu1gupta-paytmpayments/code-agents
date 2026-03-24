@@ -150,10 +150,14 @@ def validate_port(v: str) -> bool:
 
 
 def validate_job_path(v: str) -> bool:
-    """Jenkins job should be a path, not a full URL."""
+    """Jenkins job should be a clean folder path, not a full URL or job/ prefixed path."""
     if v.startswith("http://") or v.startswith("https://"):
         return False
-    return bool(v)
+    # Auto-clean: strip job/ prefix if user pasted from Jenkins URL
+    cleaned = "/".join(p for p in v.strip("/").split("/") if p and p != "job")
+    if cleaned != v.strip("/"):
+        print(dim(f"    Auto-cleaned: {v} → {cleaned}"))
+    return bool(cleaned)
 
 
 # ---------------------------------------------------------------------------
@@ -315,49 +319,57 @@ def prompt_cicd_pipeline() -> dict[str, str]:
 
     # Jenkins
     if prompt_yes_no("Configure Jenkins?", default=False):
-        print(dim("    Hint: Jenkins base URL without job path"))
-        print(dim("    Example: https://jenkins.company.com/"))
+        print(dim("    Jenkins base URL without job path"))
+        print(dim("    Example: https://jenkins.pg2nonprod.paytmpayments.in/"))
         env["JENKINS_URL"] = prompt(
             "JENKINS_URL",
+            default="https://jenkins.pg2nonprod.paytmpayments.in/",
             required=True,
             validator=validate_url,
             error_msg="Must be a valid URL.",
         )
-        print(dim("    Hint: Jenkins user with API token access"))
+        print(dim("    Jenkins user with API token access"))
+        print(dim("    Example: shivanshu1.gupta@paytmpayments.com"))
         env["JENKINS_USERNAME"] = prompt("JENKINS_USERNAME", required=True)
-        print(dim("    Hint: Manage Jenkins → Users → Configure → API Token"))
+        print(dim("    Manage Jenkins → Users → Configure → API Token"))
         env["JENKINS_API_TOKEN"] = prompt("JENKINS_API_TOKEN", secret=True, required=True)
         print()
-        print(dim("    Hint: Use the folder path from your Jenkins URL, separated by /"))
+        print(dim("    Use the folder path from your Jenkins URL, separated by /"))
         print(dim("    Example: If your Jenkins URL is:"))
-        print(dim("      https://jenkins.company.com/job/pg2/job/pg2-dev-build-jobs/job/pg2-dev-my-service/"))
-        print(dim("    Then the job path is: pg2/pg2-dev-build-jobs/pg2-dev-my-service"))
+        print(dim("      https://jenkins.company.com/job/pg2/job/pg2-dev-build-jobs/job/pg2-dev-pg-acquiring-biz/"))
+        print(dim("    Then the job path is: pg2/pg2-dev-build-jobs/pg2-dev-pg-acquiring-biz"))
+        print(dim("    DO NOT include 'job/' prefix — just use folder names separated by /"))
         print()
         env["JENKINS_BUILD_JOB"] = prompt(
             "JENKINS_BUILD_JOB",
+            default="pg2/pg2-dev-build-jobs/pg2-dev-pg-acquiring-biz",
             required=True,
             validator=validate_job_path,
-            error_msg="Enter a job path like 'pg2/pg2-dev-build-jobs/my-service', not a full URL.",
+            error_msg="Enter a job path like 'pg2/pg2-dev-build-jobs/pg2-dev-pg-acquiring-biz', not a full URL.",
         )
-        print(dim("    Hint: Deploy job path (same as build job if same pipeline, or blank to skip)"))
+        print(dim("    Deploy job path (same as build job if same pipeline)"))
+        print(dim("    Example: pg2/pg2-dev-build-jobs/deploy"))
         env["JENKINS_DEPLOY_JOB"] = prompt(
             "JENKINS_DEPLOY_JOB",
+            default=env.get("JENKINS_BUILD_JOB", ""),
             validator=validate_job_path,
             error_msg="Enter a job path, not a full URL.",
         )
 
     # ArgoCD
     if prompt_yes_no("Configure ArgoCD?", default=False):
-        print(dim("    Hint: ArgoCD server URL (e.g. https://argocd.company.com)"))
+        print(dim("    ArgoCD server URL"))
+        print(dim("    Example: https://argocd-acquiring.pg2prod.paytm.com"))
         env["ARGOCD_URL"] = prompt(
             "ARGOCD_URL",
             required=True,
             validator=validate_url,
             error_msg="Must be a valid URL.",
         )
-        print(dim("    Hint: Generate via: argocd account generate-token"))
+        print(dim("    Generate via: argocd account generate-token --account <user>"))
         env["ARGOCD_AUTH_TOKEN"] = prompt("ARGOCD_AUTH_TOKEN", secret=True, required=True)
-        print(dim("    Hint: Must match the app name in ArgoCD UI exactly"))
+        print(dim("    Must match the app name in ArgoCD UI exactly"))
+        print(dim("    Example: pg-acquiring-biz"))
         env["ARGOCD_APP_NAME"] = prompt("ARGOCD_APP_NAME", required=True)
 
     # Testing overrides

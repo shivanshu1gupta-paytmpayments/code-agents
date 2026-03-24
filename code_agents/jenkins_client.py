@@ -70,8 +70,19 @@ class JenkinsClient:
         return self._crumb
 
     def _job_path(self, job_name: str) -> str:
-        """Convert a slash-separated job name to Jenkins API path."""
-        return "/job/" + "/job/".join(job_name.split("/"))
+        """Convert a slash-separated job name to Jenkins API path.
+
+        Input: 'pg2/pg2-dev-build-jobs/pg2-dev-pg-acquiring-biz'
+        Output: '/job/pg2/job/pg2-dev-build-jobs/job/pg2-dev-pg-acquiring-biz'
+
+        Also handles misconfigured input with 'job/' prefix:
+        Input: 'job/pg2/job/pg2-dev-build-jobs/'
+        Output: '/job/pg2/job/pg2-dev-build-jobs'
+        """
+        # Strip any existing 'job/' prefix segments and trailing slashes
+        # (user may copy-paste from Jenkins URL)
+        parts = [p for p in job_name.strip("/").split("/") if p and p != "job"]
+        return "/job/" + "/job/".join(parts)
 
     async def list_jobs(self, folder_name: str | None = None) -> list[dict]:
         """
