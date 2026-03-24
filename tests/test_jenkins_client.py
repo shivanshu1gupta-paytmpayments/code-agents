@@ -48,6 +48,18 @@ class TestJenkinsClient:
         assert c._job_path("pg2/pg2-dev-build-jobs/pg2-dev-pg-acquiring-biz") == \
             "/job/pg2/job/pg2-dev-build-jobs/job/pg2-dev-pg-acquiring-biz"
 
+    def test_job_path_strips_job_prefix(self):
+        """Handles misconfigured input with 'job/' prefixes (copy-pasted from Jenkins URL)."""
+        c = self._make_client()
+        assert c._job_path("job/pg2/job/pg2-dev-build-jobs/") == \
+            "/job/pg2/job/pg2-dev-build-jobs"
+
+    def test_job_path_strips_trailing_slash(self):
+        """Trailing slashes are stripped."""
+        c = self._make_client()
+        assert c._job_path("pg2/pg2-dev-build-jobs/") == \
+            "/job/pg2/job/pg2-dev-build-jobs"
+
 
 class TestExtractBuildVersion:
     """Test build version extraction from console logs."""
