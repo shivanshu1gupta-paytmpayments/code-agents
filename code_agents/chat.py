@@ -66,6 +66,7 @@ AGENT_ROLES = {
     "jenkins-deploy": "Trigger and monitor Jenkins deployment jobs",
     "argocd-verify": "Verify ArgoCD deployments, scan pod logs, rollback",
     "pipeline-orchestrator": "Guide full CI/CD pipeline end-to-end",
+    "qa-regression": "Run regression suites, write missing tests, eliminate manual QA",
     "agent-router": "Help pick the right specialist agent",
 }
 
@@ -224,6 +225,22 @@ AGENT_WELCOME = {
             "Walk me through deploying to production",
         ],
     ),
+    "qa-regression": (
+        "QA Regression — Eliminate Manual Testing",
+        [
+            "Run full regression test suite and report results",
+            "Write missing tests by analyzing the codebase",
+            "Mock external dependencies (APIs, DBs, queues)",
+            "Identify untested code paths and coverage gaps",
+            "Create test plans for critical flows",
+        ],
+        [
+            "Run the full regression suite and report what's failing",
+            "Write tests for all untested code in src/services/",
+            "What's the current test coverage? Where are the gaps?",
+            "Create integration tests for the payment API endpoints",
+        ],
+    ),
     "agent-router": (
         "Agent Router — Find the Right Specialist",
         [
@@ -247,6 +264,46 @@ _ANSI_STRIP_RE = re.compile(r"\033\[[0-9;]*m")
 def _visible_len(text: str) -> int:
     """Return the visible length of a string, ignoring ANSI escape codes."""
     return len(_ANSI_STRIP_RE.sub("", text))
+
+
+def _build_system_context(repo: str, agent_name: str) -> str:
+    """Build the system context message for an agent, including bash tool and rules."""
+    from .rules_loader import load_rules as _load_rules
+
+    repo_name = os.path.basename(repo)
+    rules_text = _load_rules(agent_name, repo)
+
+    context = (
+        f"IMPORTANT: You are working on the project at: {repo}\n"
+        f"Project name: {repo_name}\n"
+        f"This is the user's repository — all your analysis, code reading, "
+        f"file operations, and responses must be about THIS project's files. "
+        f"Do NOT describe the code-agents tool itself.\n"
+        f"When reading files, searching code, or explaining architecture — "
+        f"always operate within {repo}.\n"
+        f"\n"
+        f"--- Bash Tool ---\n"
+        f"You have access to run shell commands on the user's machine.\n"
+        f"To run a command, output it in a ```bash code block. The user will be\n"
+        f"prompted to approve it, and the output will be sent back to you automatically.\n"
+        f"You can then analyze the output and suggest next steps or run more commands.\n"
+        f"\n"
+        f"Use this to:\n"
+        f"  - Run curl commands to call APIs\n"
+        f"  - Execute git commands (git status, git log, git diff)\n"
+        f"  - Run tests (pytest, npm test, etc.)\n"
+        f"  - Check file contents (cat, head, grep)\n"
+        f"  - Run build/deploy commands\n"
+        f"  - Any shell command the user needs\n"
+        f"\n"
+        f"Always explain what each command does before outputting it.\n"
+        f"Wait for the command result before continuing your analysis.\n"
+        f"--- End Bash Tool ---"
+    )
+    if rules_text:
+        context += f"\n\n--- Rules ---\n{rules_text}\n--- End Rules ---"
+
+    return context
 
 
 def _print_welcome(agent_name: str) -> None:
@@ -1195,24 +1252,9 @@ def chat_main(args: list[str] | None = None):
                     role = AGENT_ROLES.get(delegate_agent, "")
                     print(dim(f"\n  Delegating to {bold(cyan(delegate_agent))}: {dim(role)}"))
 
-                    # Build messages with repo context + rules
+                    # Build messages with repo context + bash tool + rules
                     repo = state.get("repo_path", cwd)
-                    repo_name = os.path.basename(repo)
-
-                    from .rules_loader import load_rules as _load_rules
-                    delegate_rules = _load_rules(delegate_agent, repo)
-
-                    system_context = (
-                        f"IMPORTANT: You are working on the project at: {repo}\n"
-                        f"Project name: {repo_name}\n"
-                        f"This is the user's repository — all your analysis, code reading, "
-                        f"file operations, and responses must be about THIS project's files. "
-                        f"Do NOT describe the code-agents tool itself.\n"
-                        f"When reading files, searching code, or explaining architecture — "
-                        f"always operate within {repo}."
-                    )
-                    if delegate_rules:
-                        system_context += f"\n\n--- Rules ---\n{delegate_rules}\n--- End Rules ---"
+                    system_context = _build_system_context(repo, delegate_agent)
                     delegate_messages = [
                         {"role": "system", "content": system_context},
                         {"role": "user", "content": delegate_prompt},
@@ -1272,23 +1314,8 @@ def chat_main(args: list[str] | None = None):
                     fb = state.pop("_exec_feedback", None)
                     if fb:
                         repo = state.get("repo_path", cwd)
-                        repo_name = os.path.basename(repo)
                         current_agent = state["agent"]
-
-                        from .rules_loader import load_rules as _load_rules
-                        rules_text = _load_rules(current_agent, repo)
-
-                        system_context = (
-                            f"IMPORTANT: You are working on the project at: {repo}\n"
-                            f"Project name: {repo_name}\n"
-                            f"This is the user's repository — all your analysis, code reading, "
-                            f"file operations, and responses must be about THIS project's files. "
-                            f"Do NOT describe the code-agents tool itself.\n"
-                            f"When reading files, searching code, or explaining architecture — "
-                            f"always operate within {repo}."
-                        )
-                        if rules_text:
-                            system_context += f"\n\n--- Rules ---\n{rules_text}\n--- End Rules ---"
+                        system_context = _build_system_context(repo, current_agent)
 
                         output_preview = fb["output"][:3000] if fb["output"] else "(no output)"
                         feedback = (
@@ -1326,26 +1353,10 @@ def chat_main(args: list[str] | None = None):
                         print()
                 continue
 
-            # Build messages — inject repo context + rules
+            # Build messages — inject repo context + bash tool + rules
             repo = state.get("repo_path", cwd)
-            repo_name = os.path.basename(repo)
             current_agent = state["agent"]
-
-            # Load rules fresh from disk (auto-refresh on every message)
-            from .rules_loader import load_rules as _load_rules
-            rules_text = _load_rules(current_agent, repo)
-
-            system_context = (
-                f"IMPORTANT: You are working on the project at: {repo}\n"
-                f"Project name: {repo_name}\n"
-                f"This is the user's repository — all your analysis, code reading, "
-                f"file operations, and responses must be about THIS project's files. "
-                f"Do NOT describe the code-agents tool itself.\n"
-                f"When reading files, searching code, or explaining architecture — "
-                f"always operate within {repo}."
-            )
-            if rules_text:
-                system_context += f"\n\n--- Rules ---\n{rules_text}\n--- End Rules ---"
+            system_context = _build_system_context(repo, current_agent)
             messages = [
                 {"role": "system", "content": system_context},
                 {"role": "user", "content": user_input},

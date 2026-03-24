@@ -1791,7 +1791,8 @@ COMMANDS = {
 _AGENT_NAMES_FOR_COMPLETION = [
     "agent-router", "argocd-verify", "code-reasoning", "code-reviewer",
     "code-tester", "code-writer", "git-ops", "jenkins-build",
-    "jenkins-deploy", "pipeline-orchestrator", "redash-query", "test-coverage",
+    "jenkins-deploy", "pipeline-orchestrator", "qa-regression",
+    "redash-query", "test-coverage",
 ]
 
 # Subcommands for commands that take them
