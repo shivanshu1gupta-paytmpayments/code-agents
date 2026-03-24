@@ -94,8 +94,10 @@ These files must stay in sync. When you change one, check the others:
 | Agent list | `agent_router.yaml`, `chat.py` (AGENT_ROLES), `cli.py` (_AGENT_EXAMPLES + help), `Agents.md`, `README.md`, `CLAUDE.md`, `cursor.md` |
 | CLI commands | `cli.py` (function + COMMANDS + help + dispatcher), `README.md`, `CLAUDE.md`, `cursor.md` |
 | Chat slash commands | `chat.py` (_handle_command + /help + _slash_commands list), `cli.py` (cmd_help chat section), `test_chat.py`, `Agents.md` |
+| Chat history | `chat_history.py` (CRUD), `chat.py` (auto-save + /history + /resume), `stream.py` (build_prompt), `cli.py` (cmd_sessions), `test_chat_history.py` |
 | REST endpoints | `routers/*.py`, `cli.py` (curls), `README.md`, `CLAUDE.md`, `cursor.md` |
 | Env variables | `.env.example`, `setup.py`, `cli.py` (init + doctor), `README.md`, `CLAUDE.md`, `cursor.md` |
+| Backends | `backend.py` (dispatch), `cli.py` (init --backend), `env_loader.py` (GLOBAL_VARS), `CLAUDE.md`, `README.md`, `Agents.md`, `cursor.md` |
 | Agent rules | `rules_loader.py` (loader), `chat.py` (injection + /rules), `stream.py` (server-side injection), `cli.py` (cmd_rules), `README.md`, `Agents.md`, `CLAUDE.md`, `cursor.md` |
 | Test count | `README.md` (badge + text), `CLAUDE.md`, `cursor.md` |
 | Copyright | `LICENSE`, `README.md` footer, `Agents.md` footer |
@@ -109,7 +111,7 @@ These files must stay in sync. When you change one, check the others:
 # Install dev dependencies
 poetry install --with dev
 
-# Run tests (must be 199+ passing)
+# Run tests (must be 201+ passing)
 poetry run pytest
 
 # Check project quality

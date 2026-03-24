@@ -57,6 +57,8 @@ $ code-agents chat
 - **Works on YOUR project** — auto-detects git repo from your current directory and passes it to the agent
 - **Auto-starts server** — if server isn't running, offers to start it for you
 - **Multi-turn sessions** — context is preserved across messages
+- **Chat history persistence** — sessions auto-saved and can be resumed later
+- **Session resume** — pick up any previous conversation right where you left off
 - **Streaming** — responses appear in real-time as the agent types
 - **Agent switching** — `/agent code-writer` switches permanently
 - **Inline delegation** — `/<agent> <prompt>` sends a one-shot to another agent, then returns to your current agent
@@ -65,7 +67,7 @@ $ code-agents chat
 - **`/exec`** — run any command and auto-feed output to agent for analysis
 - **Agent rules** — persistent instructions per-agent or global, auto-refresh mid-chat
 
-Chat commands: `/help /quit /agents /agent <name> /rules /run <cmd> /exec <cmd> /restart /session /clear /<agent> <prompt>`
+Chat commands: `/help /quit /agents /agent <name> /rules /run <cmd> /exec <cmd> /restart /session /clear /history /resume <id> /delete-chat <id> /<agent> <prompt>`
 
 ## CLI Commands
 
@@ -80,7 +82,7 @@ code-agents help                         # full help with all args
 | `migrate` | | Migrate legacy .env to centralized config |
 | `start` | `[--fg]` | Start server (background). `--fg` for foreground |
 | `restart` | | Restart the server (shutdown + start) |
-| `chat` | `[agent-name]` | Interactive chat. No args = show agent picker |
+| `chat` | `[agent-name] [--resume <id>]` | Interactive chat. No args = show agent picker. `--resume` to continue a saved session |
 | `setup` | | Full interactive setup wizard (7 steps) |
 | `completions` | `[--install\|--zsh\|--bash]` | Install shell tab-completion |
 
@@ -115,6 +117,7 @@ code-agents help                         # full help with all args
 | `agents` | | List all 13 agents |
 | `curls` | `[category\|agent]` | Show API curl commands. Filter by category or agent |
 | `version` | | Version, Python, install path |
+| `sessions` | `[--all \| delete <id> \| clear]` | List/manage saved chat sessions |
 | `help` | | Full help with all args and examples |
 | `rules` | `[list\|create\|edit\|delete]` | Manage agent rules (see below) |
 | `migrate` | | Migrate legacy .env to centralized config |
@@ -208,6 +211,8 @@ REST APIs: `/pipeline/*`, `/git/*`, `/testing/*`, `/jenkins/*`, `/argocd/*`
 |----------|-------------|
 | `CURSOR_API_KEY` | Cursor backend API key |
 | `ANTHROPIC_API_KEY` | Claude backend API key |
+| `CODE_AGENTS_BACKEND` | Set to `claude-cli` to use Claude subscription (no API key) |
+| `CODE_AGENTS_CLAUDE_CLI_MODEL` | Model for claude-cli (default: `claude-sonnet-4-6`) |
 | `HOST` / `PORT` | Server bind (default `0.0.0.0:8000`) |
 | `TARGET_REPO_PATH` | Target repo (auto-detected from cwd) |
 | `JENKINS_URL` | Jenkins server URL |
@@ -269,7 +274,8 @@ code-agents/
     env_loader.py               #   Centralized env loading (global + per-repo)
     rules_loader.py             #   Agent rules (global + project, auto-refresh)
     backend.py                  #   Backend abstraction (cursor/claude, claude-agent-sdk built-in)
-    stream.py                   #   SSE streaming + response builders
+    chat_history.py             #   Chat session persistence (auto-save, resume, UUID-based)
+    stream.py                   #   SSE streaming + response builders + build_prompt()
     models.py                   #   Pydantic request/response models
     logging_config.py           #   Hourly rotating file + console logging
     git_client.py               #   Async git operations
@@ -284,7 +290,7 @@ code-agents/
       completions.py  agents_list.py  git_ops.py  testing.py
       jenkins.py  argocd.py  pipeline.py  redash.py
       elasticsearch.py  atlassian_oauth_web.py
-  tests/                        # 201 tests
+  tests/                        # 230 tests
     test_chat.py                #   Chat REPL, slash commands, agent parsing, SSE, delegation, tab-completion
     test_cli.py                 #   CLI commands, help, config, curls, dispatcher
     test_git_client.py          #   Git operations (real temp repos)
@@ -293,6 +299,7 @@ code-agents/
     test_env_loader.py          #   Centralized config loading, var classification
     test_rules_loader.py        #   Rules loading, merge order, agent targeting
     test_testing_client.py      #   Test detection, coverage, pipeline state
+    test_chat_history.py       #   Session CRUD, persistence, build_prompt
   scripts/                      # Utility scripts
   initiater/                    # Project audit system (14 rules)
   logs/                         # Hourly-rotated log files

@@ -41,22 +41,26 @@ code-agents pipeline rollback <id>  # rollback deployment
 code-agents curls [cat|agent]       # show API curl commands
 code-agents setup                   # full setup wizard
 code-agents update                  # pull latest code + reinstall deps
+code-agents sessions                # list saved chat sessions
+code-agents sessions --all          # sessions from all repos
+code-agents chat --resume <id>      # resume a saved session
 code-agents version                 # version info
 
 # Dev
-poetry run pytest                   # 201 tests
+poetry run pytest                   # 230 tests
 ```
 
 ## Architecture
 
-- **`cli.py`** — 22 CLI commands (init, migrate, rules, start, restart, chat, shutdown, status, doctor, config, logs, branches, diff, test, review, pipeline, agents, curls, setup, update, version, completions, help)
-- **`chat.py`** — Interactive REPL: agent picker menu, streaming, multi-turn sessions, `/agent` switching, inline delegation (`/<agent> <prompt>`), `/exec` (run + feed to agent), tab-completion, auto-detects git repo, auto-starts server
+- **`cli.py`** — 23 CLI commands (init, migrate, rules, start, restart, chat, sessions, shutdown, status, doctor, config, logs, branches, diff, test, review, pipeline, agents, curls, setup, update, version, completions, help)
+- **`chat.py`** — Interactive REPL: agent picker menu, streaming, multi-turn sessions with auto-save, `/agent` switching, inline delegation, `/exec`, `/history` + `/resume` for session persistence, tab-completion, auto-detects git repo, auto-starts server
 - **`setup.py`** — Interactive setup wizard
 - **`env_loader.py`** — Centralized env loading: global (`~/.code-agents/config.env`) + per-repo (`.env.code-agents`)
 - **`rules_loader.py`** — Agent rules: global (`~/.code-agents/rules/`) + project (`.code-agents/rules/`), auto-refresh
 - **`app.py`** — FastAPI app, CORS, lifespan, request/response logging
 - **`backend.py`** — Backend abstraction: cursor CLI, cursor HTTP, claude (claude-agent-sdk built-in)
-- **`stream.py`** — SSE streaming with ToolUse/ToolResult logging
+- **`chat_history.py`** — Chat session persistence: auto-save to `~/.code-agents/chat_history/`, UUID-based IDs, resume
+- **`stream.py`** — SSE streaming with ToolUse/ToolResult logging, `build_prompt()` for multi-turn
 - **`logging_config.py`** — Hourly rotating log files (7-day retention)
 - **CI/CD clients**: `git_client.py`, `testing_client.py`, `jenkins_client.py`, `argocd_client.py`
 - **CI/CD routers**: `routers/git_ops.py`, `testing.py`, `jenkins.py`, `argocd.py`, `pipeline.py`
@@ -71,13 +75,16 @@ poetry run pytest                   # 201 tests
 - **Interactive chat**: `code-agents chat` → numbered menu → REPL with streaming. `/agent` switches permanently. `/<agent> <prompt>` delegates one-shot to another agent. Tab-completion for commands and agent names. Each agent stays in role. Auto-detects git repo from cwd. Auto-starts server if not running.
 - **Dynamic `repo_path`**: request param → `TARGET_REPO_PATH` env → `os.getcwd()` (never stored in config)
 - **Background server**: `start` launches background process, `shutdown` kills it
+- **Chat history**: Sessions auto-saved as JSON to `~/.code-agents/chat_history/`. Full conversation sent with every request. Resume with `--resume <id>` or `/resume`. Manage with `code-agents sessions`.
 - **Hourly log rotation**: `logs/code-agents.log` = last hour, 168 backups (7 days)
 - **Agent names**: kebab-case in URLs, snake_case in filenames
-- **Backends**: `"cursor"` (default) or `"claude"`, per agent. `claude-agent-sdk` is a core dependency; `cursor-agent-sdk` is optional.
+- **Backends**: `"cursor"` (default), `"claude"` (API), or `"claude-cli"` (subscription, no API key). Set `CODE_AGENTS_BACKEND=claude-cli` globally to override all agents.
 
 ## Environment Variables
 
 Global (`~/.code-agents/config.env`):
+- `CODE_AGENTS_BACKEND` — `claude-cli` to use Claude subscription instead of API keys
+- `CODE_AGENTS_CLAUDE_CLI_MODEL` — model for claude-cli (default: `claude-sonnet-4-6`)
 - `CURSOR_API_KEY` / `ANTHROPIC_API_KEY` — Backend keys
 - `HOST` / `PORT` — Server bind (default `0.0.0.0:8000`)
 - `REDASH_*`, `ELASTICSEARCH_*`, `ATLASSIAN_*` — Integrations
@@ -91,7 +98,7 @@ Runtime (never stored): `TARGET_REPO_PATH` — auto-detected from cwd
 
 ## Testing
 
-201 tests — `poetry run pytest`. Covers: chat REPL (slash commands, agent parsing, SSE streaming, repo detection, inline delegation, tab-completion, command extraction, placeholders, welcome messages), centralized env loading (split_vars, load order, var classification), rules loader (merge order, agent targeting, auto-refresh), CLI (all 22 commands, help completeness, config, curls, dispatcher), git operations, test framework detection, coverage XML, Jenkins/ArgoCD client init + job path + build version extraction, all routers, pipeline lifecycle, health/diagnostics.
+230 tests — `poetry run pytest`. Covers: chat REPL (slash commands, agent parsing, SSE streaming, repo detection, inline delegation, tab-completion, command extraction, placeholders, welcome messages), centralized env loading (split_vars, load order, var classification), rules loader (merge order, agent targeting, auto-refresh), CLI (all 23 commands, help completeness, config, curls, dispatcher), git operations, test framework detection, coverage XML, Jenkins/ArgoCD client init + job path + build version extraction, all routers, pipeline lifecycle, health/diagnostics.
 
 ## Adding a New Agent
 

@@ -347,9 +347,19 @@ extra_args:                             # Optional: backend-specific arguments
 | `acceptEdits` | Auto-approve all file modifications |
 | `bypassPermissions` | Read-only, no modifications allowed |
 
-### Claude Backend Example
+### Claude Backend Options
 
-A disabled example is included at `agents/claude_example.yaml.disabled`. To use the Claude backend:
+**Option A: Claude CLI (recommended — uses your subscription, no API key)**
+```bash
+code-agents init --backend
+# Choose: 3. Claude CLI (uses your Claude subscription)
+# Or set manually in ~/.code-agents/config.env:
+CODE_AGENTS_BACKEND=claude-cli
+CODE_AGENTS_CLAUDE_CLI_MODEL=claude-sonnet-4-6
+```
+Requires: Claude CLI installed and logged in. Uses Claude Pro/Max subscription.
+
+**Option B: Claude API (pay-as-you-go with API key)**
 
 1. Set `ANTHROPIC_API_KEY` (via `code-agents init` or in `~/.code-agents/config.env`)
 2. Rename the example: `mv agents/claude_example.yaml.disabled agents/claude_example.yaml`
@@ -378,8 +388,10 @@ All agents support multi-turn conversations. **The easiest way is via chat** —
 
 ```bash
 code-agents chat code-reasoning
-# Sessions persist automatically between messages.
+# Sessions auto-save to ~/.code-agents/chat_history/ with unique UUIDs.
 # Use /session to see current ID, /clear to start fresh.
+# Use /history to list saved sessions, /resume <id> to continue one.
+# Or: code-agents sessions / code-agents chat --resume <id>
 ```
 
 **Via API** — pass `session_id` manually:
@@ -426,7 +438,7 @@ $ code-agents chat
   code-tester › Creating tests...
 ```
 
-Chat commands: `/help /quit /agent <name> /agents /rules /run <cmd> /exec <cmd> /restart /session /clear /<agent> <prompt>`
+Chat commands: `/help /quit /agent <name> /agents /rules /run <cmd> /exec <cmd> /restart /session /clear /history /resume <id> /delete-chat <id> /<agent> <prompt>`
 
 The agent automatically works on **your current project** (detects git repo from cwd).
 If the server isn't running, chat offers to start it for you.
