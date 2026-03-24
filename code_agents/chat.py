@@ -1402,7 +1402,14 @@ def chat_main(args: list[str] | None = None):
             if full_response:
                 commands = _extract_commands("".join(full_response))
                 if commands:
-                    exec_results = _offer_run_commands(commands, state.get("repo_path", cwd))
+                    try:
+                        exec_results = _offer_run_commands(commands, state.get("repo_path", cwd))
+                    except (EOFError, KeyboardInterrupt):
+                        print()
+                        exec_results = []
+                    except Exception as e:
+                        print(red(f"\n  Command execution error: {e}"))
+                        exec_results = []
 
                     # Feed execution results back to the agent automatically
                     if exec_results:
