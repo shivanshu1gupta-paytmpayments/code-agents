@@ -112,7 +112,7 @@ code-agents help                         # full help with all args
 ### Information
 | Command | Args | Description |
 |---------|------|-------------|
-| `agents` | | List all 12 agents |
+| `agents` | | List all 13 agents |
 | `curls` | `[category\|agent]` | Show API curl commands. Filter by category or agent |
 | `version` | | Version, Python, install path |
 | `help` | | Full help with all args and examples |
@@ -169,7 +169,7 @@ myrepo/.code-agents/rules/code-writer.md:
   Always add type hints to new functions.
 ```
 
-## Agents (12)
+## Agents (13)
 
 | Agent | Role | Permissions |
 |---|---|---|
@@ -184,6 +184,7 @@ myrepo/.code-agents/rules/code-writer.md:
 | `jenkins-build` | Triggers/monitors Jenkins CI builds | Read-only |
 | `jenkins-deploy` | Triggers/monitors Jenkins deployments | Read-only |
 | `argocd-verify` | Checks ArgoCD pods, scans logs, rollbacks | Read-only |
+| `qa-regression` | Runs regression suites, writes missing tests, eliminates manual QA | Auto-approve edits |
 | `pipeline-orchestrator` | Guides full CI/CD pipeline end-to-end | Read-only |
 
 ## CI/CD Pipeline
@@ -236,7 +237,7 @@ code-agents test        # run tests on target repo
 1. `code-agents start`
 2. Open WebUI → Settings → Connections → OpenAI
 3. URL: `http://localhost:8000/v1`, Key: any string
-4. All 12 agents appear as models
+4. All 13 agents appear as models
 
 ## Docker
 

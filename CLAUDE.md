@@ -2,7 +2,7 @@
 
 ## What This Project Is
 
-Code Agents is an AI-powered code agent platform with interactive chat and a CI/CD pipeline. 12 agents exposed as OpenAI-compatible endpoints. CLI-first: `code-agents init` per repo, `code-agents chat` for interactive use.
+Code Agents is an AI-powered code agent platform with interactive chat and a CI/CD pipeline. 13 agents exposed as OpenAI-compatible endpoints. CLI-first: `code-agents init` per repo, `code-agents chat` for interactive use.
 
 ## Quick Reference
 
@@ -24,7 +24,7 @@ code-agents chat [agent-name]       # interactive chat REPL
 code-agents status                  # health + config
 code-agents doctor                  # diagnose issues
 code-agents migrate                 # migrate legacy .env to centralized config
-code-agents agents                  # list 12 agents
+code-agents agents                  # list 13 agents
 code-agents config                  # show config (secrets masked)
 code-agents rules                   # manage agent rules (list/create/edit/delete)
 code-agents restart                 # restart server (shutdown + start)
@@ -68,7 +68,7 @@ poetry run python initiater/run_audit.py
 - **`code_agents/argocd_client.py`** — ArgoCD REST API client (status, pods, logs, sync, rollback)
 - **`code_agents/pipeline_state.py`** — In-memory 6-step pipeline state machine
 - **`code_agents/routers/`** — FastAPI route handlers: completions, agents_list, git_ops, testing, jenkins, argocd, pipeline, redash, elasticsearch, atlassian_oauth_web
-- **`agents/*.yaml`** — 12 agent definitions
+- **`agents/*.yaml`** — 13 agent definitions
 - **`tests/`** — 199 tests
 - **`initiater/`** — Project quality audit system (14 rules)
 
