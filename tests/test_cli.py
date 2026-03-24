@@ -85,7 +85,7 @@ class TestCmdHelp:
             "init", "migrate", "rules", "start", "restart", "chat", "setup",
             "shutdown", "status", "logs", "config", "doctor", "branches", "diff",
             "test", "review", "pipeline", "agents", "curls", "update",
-            "version", "help",
+            "version", "help", "sessions",
         ]
         for cmd in commands:
             assert cmd in output, f"Command '{cmd}' missing from help"
@@ -95,7 +95,7 @@ class TestCmdHelp:
         cmd_help()
         output = capsys.readouterr().out
 
-        slash_cmds = ["/help", "/quit", "/agent", "/agents", "/session", "/clear"]
+        slash_cmds = ["/help", "/quit", "/agent", "/agents", "/session", "/clear", "/history", "/resume"]
         for cmd in slash_cmds:
             assert cmd in output, f"Chat command '{cmd}' missing from help"
 

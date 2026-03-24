@@ -220,6 +220,8 @@ class TestSlashCommands:
         assert "/quit" in captured.out
         assert "/agent" in captured.out
         assert "/clear" in captured.out
+        assert "/history" in captured.out
+        assert "/resume" in captured.out
 
     def test_agent_no_arg(self, capsys):
         state = self._make_state()
@@ -265,6 +267,44 @@ class TestSlashCommands:
         captured = capsys.readouterr()
         assert "Unknown command" in captured.out
 
+
+
+    def test_history(self):
+        """Test /history command runs without error."""
+        state = {"agent": "code-reasoning", "repo_path": "/tmp/test", "_chat_session": None}
+        result = _handle_command("/history", state, "http://localhost:8000")
+        assert result is None
+
+    def test_resume_no_arg(self, capsys):
+        """Test /resume with no session ID."""
+        state = {"agent": "code-reasoning", "repo_path": "/tmp/test", "_chat_session": None}
+        result = _handle_command("/resume", state, "http://localhost:8000")
+        assert result is None
+        captured = capsys.readouterr()
+        assert "Usage" in captured.out
+
+    def test_resume_not_found(self, capsys):
+        """Test /resume with nonexistent session ID."""
+        state = {"agent": "code-reasoning", "repo_path": "/tmp/test", "_chat_session": None}
+        result = _handle_command("/resume nonexistent-id", state, "http://localhost:8000")
+        assert result is None
+        captured = capsys.readouterr()
+        assert "not found" in captured.out
+
+    def test_delete_chat_no_arg(self, capsys):
+        """Test /delete-chat with no session ID."""
+        state = {"agent": "code-reasoning", "repo_path": "/tmp/test", "_chat_session": None}
+        result = _handle_command("/delete-chat", state, "http://localhost:8000")
+        assert result is None
+        captured = capsys.readouterr()
+        assert "Usage" in captured.out
+
+    def test_clear_resets_chat_session(self):
+        """Test /clear also clears _chat_session."""
+        state = {"agent": "code-reasoning", "session_id": "abc", "_chat_session": {"id": "test"}}
+        _handle_command("/clear", state, "http://localhost:8000")
+        assert state["session_id"] is None
+        assert state["_chat_session"] is None
 
 class TestRepoDetection:
     """Test that chat detects git repos correctly."""
@@ -447,7 +487,7 @@ class TestInlineDelegation:
 class TestTabCompletion:
     """Test readline tab-completion for slash commands and agent names."""
 
-    SLASH_COMMANDS = ["/help", "/quit", "/exit", "/agents", "/agent", "/session", "/clear"]
+    SLASH_COMMANDS = ["/help", "/quit", "/exit", "/agents", "/agent", "/session", "/clear", "/history", "/resume", "/delete-chat"]
     AGENT_NAMES = ["code-reasoning", "code-writer", "code-tester", "code-reviewer", "git-ops"]
 
     def _completer(self):
@@ -464,8 +504,8 @@ class TestTabCompletion:
                 break
             results.append(result)
             idx += 1
-        # 7 slash commands + 5 agent names
-        assert len(results) == 12
+        # 10 slash commands + 5 agent names
+        assert len(results) == 15
         assert "/help" in results
         assert "/code-reasoning" in results
 
