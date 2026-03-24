@@ -41,9 +41,9 @@ def _get_client() -> JenkinsClient:
 
 class TriggerBuildRequest(BaseModel):
     """Request to trigger a Jenkins build."""
-    job_name: str = Field(..., description="Jenkins job name (e.g., 'pg2/pg2-dev-build-jobs/my-service')")
-    branch: Optional[str] = Field(None, description="Branch name (added as BRANCH parameter)")
-    parameters: Optional[dict[str, Any]] = Field(None, description="Additional build parameters (e.g., JAVA_VERSION, SERVICE_NAME)")
+    job_name: str = Field(..., description="Jenkins job name (e.g., 'pg2/pg2-dev-build-jobs/pg2-dev-pg-acquiring-biz')")
+    branch: Optional[str] = Field(None, description="Branch name — convenience field, added to parameters as 'branch'")
+    parameters: Optional[dict[str, Any]] = Field(None, description="Build parameters — use exact names from /jenkins/jobs/{path}/parameters")
 
 
 class WaitForBuildRequest(BaseModel):
@@ -102,13 +102,13 @@ async def trigger_build(req: TriggerBuildRequest):
     """
     Trigger a Jenkins build job.
 
-    Returns queue_id for tracking. If branch is specified, it's added as a BRANCH parameter.
+    Returns queue_id for tracking. If branch is specified, it's added as 'branch' parameter.
     """
     try:
         client = _get_client()
         params = dict(req.parameters or {})
-        if req.branch:
-            params["BRANCH"] = req.branch
+        if req.branch and "branch" not in params:
+            params["branch"] = req.branch
         result = await client.trigger_build(
             job_name=req.job_name,
             parameters=params if params else None,
@@ -152,8 +152,8 @@ async def trigger_build_and_wait(req: TriggerBuildRequest):
         client.poll_timeout = 1200.0  # 20 minutes
 
         params = dict(req.parameters or {})
-        if req.branch:
-            params["BRANCH"] = req.branch
+        if req.branch and "branch" not in params:
+            params["branch"] = req.branch
 
         result = await client.trigger_and_wait(
             job_name=req.job_name,
