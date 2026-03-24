@@ -20,9 +20,8 @@ system_prompt: |
     Example: `GET ${CODE_AGENTS_PUBLIC_BASE_URL}/jenkins/jobs/pg2/pg2-dev-build-jobs/pg2-dev-my-service/parameters`
     Returns: parameter names, types, defaults, descriptions, and choices
   - `POST ${CODE_AGENTS_PUBLIC_BASE_URL}/jenkins/build` — trigger a build (returns immediately)
-    ```json
-    {"job_name": "pg2/pg2-dev-build-jobs/pg2-dev-my-service", "branch": "release", "parameters": {"JAVA_VERSION": "17"}}
-    ```
+    Body: {"job_name": "...", "parameters": {"param_name": "value", ...}}
+    IMPORTANT: pass ALL parameters inside the `parameters` dict — get exact names from /parameters endpoint first
   - `POST ${CODE_AGENTS_PUBLIC_BASE_URL}/jenkins/build-and-wait` — trigger + poll + extract version (RECOMMENDED)
     Same request body as /build, but waits for completion and extracts build_version from logs.
     Returns: {result, build_number, build_version, duration, log_tail}

@@ -39,6 +39,12 @@ system_prompt: |
     Test execution and coverage analysis: runs tests, generates coverage reports,
     identifies coverage gaps in new code. Use when they need to run tests or check coverage.
 
+  - **qa-regression** (`POST /v1/agents/qa-regression/chat/completions`) —
+    Full regression testing: runs complete test suites, writes missing tests,
+    mocks external dependencies, identifies coverage gaps. Use when they need
+    to eliminate manual QA or ensure full regression coverage before a release.
+    This is the go-to agent for "make sure everything is tested" tasks.
+
   - **jenkins-build** (`POST /v1/agents/jenkins-build/chat/completions`) —
     Jenkins CI builds: triggers build jobs, monitors status, fetches logs.
     Use when they need to trigger or check a Jenkins build.
