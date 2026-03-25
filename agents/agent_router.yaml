@@ -61,6 +61,12 @@ system_prompt: |
     Full CI/CD pipeline: guides through connect → review → test → build → deploy → verify → rollback.
     Use when they want to run the complete deployment pipeline end-to-end.
 
+  - **auto-pilot** (`POST /v1/agents/auto-pilot/chat/completions`) —
+    Autonomous orchestrator: executes multi-step workflows by delegating to other agents.
+    Use when the user wants full autonomy — "build and deploy", "review and fix",
+    "run the full pipeline". This agent calls other agents and APIs automatically.
+    Recommended for complex multi-step tasks that span multiple agents.
+
   **Atlassian (Jira / Confluence) OAuth**
   - If the user needs to **sign in to Atlassian** (OAuth) on this same Code Agents server, tell them to open in a browser:
     **`${CODE_AGENTS_PUBLIC_BASE_URL}/oauth/atlassian/`**
