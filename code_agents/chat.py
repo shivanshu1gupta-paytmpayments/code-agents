@@ -69,6 +69,7 @@ AGENT_ROLES = {
     "argocd-verify": "Verify ArgoCD deployments, scan pod logs, rollback",
     "pipeline-orchestrator": "Guide full CI/CD pipeline end-to-end",
     "qa-regression": "Run regression suites, write missing tests, eliminate manual QA",
+    "auto-pilot": "Autonomous orchestrator — delegates to sub-agents, runs full workflows",
     "agent-router": "Help pick the right specialist agent",
 }
 
@@ -186,17 +187,17 @@ AGENT_WELCOME = {
         ],
     ),
     "jenkins-deploy": (
-        "Jenkins Deploy — Deployment Jobs",
+        "Jenkins Deploy — Deploy Services to Environments",
         [
-            "Trigger deployment jobs with build numbers",
-            "Monitor deployment progress",
-            "Fetch deployment logs",
-            "Report deployment outcomes",
+            "Deploy a service with a specific build version (image_tag)",
+            "Choose target environment: dev, dev1, dev2, dev-stable",
+            "Monitor deployment progress with live polling",
+            "Recommend ArgoCD verification after success",
         ],
         [
-            "Deploy build #42 to staging",
-            "What's the status of the last deployment?",
-            "Show deployment logs for the latest deploy",
+            "Deploy pg-acquiring-biz with build version 1.2.3 to dev",
+            "Deploy the latest build to dev-stable",
+            "What environments are available for deployment?",
         ],
     ),
     "argocd-verify": (
@@ -241,6 +242,22 @@ AGENT_WELCOME = {
             "Write tests for all untested code in src/services/",
             "What's the current test coverage? Where are the gaps?",
             "Create integration tests for the payment API endpoints",
+        ],
+    ),
+    "auto-pilot": (
+        "Auto-Pilot — Full Autonomy",
+        [
+            "Execute multi-step workflows end-to-end autonomously",
+            "Delegate to 13 specialist agents (code-writer, reviewer, tester, etc.)",
+            "Build → Deploy → Verify pipelines without manual switching",
+            "Run code reviews, apply fixes, and re-verify automatically",
+            "Query databases, check git status, run tests — all in one flow",
+        ],
+        [
+            "Build and deploy pg-acquiring-biz to dev",
+            "Review the latest changes, fix issues, and run tests",
+            "Run the full CI/CD pipeline for release branch",
+            "Check what changed since last deploy, review, and build",
         ],
     ),
     "agent-router": (
@@ -812,16 +829,42 @@ def _offer_run_commands(
             print(red(f"  │") + prefix + " " * pad + red("│"))
         print(red(f"  └{'─' * box_width}┘"))
 
+        save_after = False
         if trusted:
             # Auto-approved — command is in the agent's rules
-            print(f"  {green('● Auto-approved')} {dim('(saved in rules)')}")
+            from .rules_loader import PROJECT_RULES_DIRNAME
+            rules_path = os.path.join(cwd, PROJECT_RULES_DIRNAME, f"{agent_name}.md") if agent_name else ""
+            print(f"  {green('● Auto-approved')} {dim(f'(saved in {rules_path})')}")
         else:
-            # Ask for approval
-            approved = _ask_yes_no("Run this command?", default=True)
-            if not approved:
+            # Build the save path for display
+            from .rules_loader import PROJECT_RULES_DIRNAME
+            if agent_name and cwd:
+                save_path = os.path.join(cwd, PROJECT_RULES_DIRNAME, f"{agent_name}.md")
+                save_display = dim(f"→ {save_path}")
+            else:
+                save_display = ""
+
+            # 3-option approval: Yes, Yes & Save, No
+            print(f"  {bold('Run this command?')}")
+            print(f"    {bold('1.')} Yes")
+            print(f"    {bold('2.')} Yes & Save to {cyan(agent_name or 'agent')} rules {save_display}")
+            print(f"    {bold('3.')} No")
+            try:
+                choice = input(f"  {dim('Choose [1/2/3]')}: ").strip()
+            except (EOFError, KeyboardInterrupt):
+                print()
+                return results
+
+            if choice in ("3", "n", "no"):
                 print(dim("  Skipped."))
                 print()
                 continue
+            elif choice in ("", "1", "y", "yes"):
+                save_after = False
+            elif choice == "2":
+                save_after = True
+            else:
+                save_after = False  # default: run but don't save
 
         # Resolve placeholders if any
         resolved = _resolve_placeholders(cmd)
@@ -832,8 +875,8 @@ def _offer_run_commands(
         output = _run_single_command(resolved, cwd)
         results.append({"command": resolved, "output": output})
 
-        # Auto-save RESOLVED command (not the one with placeholders)
-        if not trusted and agent_name and cwd:
+        # Save to rules if user chose option 2
+        if save_after and agent_name and cwd:
             _save_command_to_rules(resolved, agent_name, cwd)
 
     return results
@@ -856,25 +899,100 @@ def _run_single_command(cmd: str, cwd: str) -> str:
         pad = max(0, inner_width - len(visible))
         return red(f"  │") + f" {visible}{' ' * pad}" + red("│")
 
-    # Top border + command
+    # Top border + command (wrapped across multiple lines)
+    import textwrap
     print(red(f"  ┌{'─' * box_width}┐"))
-    print(red(f"  │") + f" {bold('$')} {cyan(cmd[:inner_width - 4])}" + " " * max(0, inner_width - len(cmd) - 3) + red("│"))
+    cmd_lines = textwrap.wrap(cmd, width=inner_width - 3)
+    for idx, line in enumerate(cmd_lines):
+        if idx == 0:
+            prefix = f" {bold('$')} {cyan(line)}"
+            vis_len = len(f" $ {line}")
+        else:
+            prefix = f"   {cyan(line)}"
+            vis_len = len(f"   {line}")
+        pad = max(0, inner_width - vis_len)
+        print(red(f"  │") + prefix + " " * pad + red("│"))
     print(red(f"  ├{'─' * box_width}┤"))
 
     raw_output = ""
     try:
-        result = subprocess.run(
-            cmd,
-            shell=True,
-            cwd=cwd,
-            capture_output=True,
-            text=True,
-            timeout=120,
+        import time as _cmd_time
+        import threading
+
+        # Run command with live timer (no hard timeout — poll instead)
+        proc = subprocess.Popen(
+            cmd, shell=True, cwd=cwd,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
         )
-        raw_output = (result.stdout or "") + (result.stderr or "")
+
+        # Show live elapsed timer + poll Jenkins status after 120s
+        _cmd_start = _cmd_time.monotonic()
+        _cmd_done = threading.Event()
+        _is_jenkins = "jenkins" in cmd.lower() and ("build" in cmd.lower() or "wait" in cmd.lower())
+
+        def _poll_jenkins_status() -> str:
+            """Try to fetch Jenkins build status from the local API."""
+            try:
+                import httpx
+                # Try to get the last build status for any jenkins job
+                r = httpx.get("http://127.0.0.1:8000/health", timeout=2.0)
+                if r.status_code != 200:
+                    return ""
+                # Try last build for the configured job
+                build_job = os.getenv("JENKINS_BUILD_JOB", "")
+                if build_job:
+                    r = httpx.get(f"http://127.0.0.1:8000/jenkins/build/{build_job}/last", timeout=5.0)
+                    if r.status_code == 200:
+                        data = r.json()
+                        building = data.get("building", False)
+                        result = data.get("result") or ("BUILDING" if building else "UNKNOWN")
+                        num = data.get("number", "?")
+                        return f"Build #{num}: {result}"
+            except Exception:
+                pass
+            return ""
+
+        def _show_cmd_timer():
+            _last_status = ""
+            while not _cmd_done.is_set():
+                elapsed = _cmd_time.monotonic() - _cmd_start
+                if elapsed < 60:
+                    t = f"{elapsed:.0f}s"
+                else:
+                    m, s = divmod(int(elapsed), 60)
+                    t = f"{m}m {s:02d}s"
+
+                # After 120s, poll Jenkins status every 15s
+                status_str = ""
+                if _is_jenkins and elapsed > 120 and int(elapsed) % 15 == 0:
+                    polled = _poll_jenkins_status()
+                    if polled:
+                        _last_status = polled
+                if _last_status:
+                    status_str = f" — {_last_status}"
+
+                line = f"\r  {yellow('⏱')} {dim(f'Running... {t}{status_str}')}"
+                sys.stdout.write(f"{line}{' ' * 10}")
+                sys.stdout.flush()
+                _cmd_done.wait(1)
+            sys.stdout.write(f"\r{' ' * 80}\r")
+            sys.stdout.flush()
+
+        timer_thread = threading.Thread(target=_show_cmd_timer, daemon=True)
+        timer_thread.start()
+
+        stdout_data, stderr_data = proc.communicate(timeout=600)
+        _cmd_done.set()
+        timer_thread.join(timeout=1)
+
+        elapsed = _cmd_time.monotonic() - _cmd_start
+        result_stdout = stdout_data.decode("utf-8", errors="replace") if stdout_data else ""
+        result_stderr = stderr_data.decode("utf-8", errors="replace") if stderr_data else ""
+        raw_output = result_stdout + result_stderr
+
         display_lines = []
-        if result.stdout:
-            stdout = result.stdout
+        if result_stdout:
+            stdout = result_stdout
             try:
                 import json as _json
                 parsed = _json.loads(stdout)
@@ -882,37 +1000,52 @@ def _run_single_command(cmd: str, cwd: str) -> str:
             except (ValueError, TypeError):
                 pass
             display_lines.extend(stdout.splitlines())
-        if result.stderr:
-            display_lines.extend(result.stderr.splitlines())
+        if result_stderr:
+            display_lines.extend(result_stderr.splitlines())
 
         if display_lines:
             for line in display_lines:
                 print(_box_line(line))
 
             # Copy full output to clipboard (macOS pbcopy)
-            if result.stdout:
+            if result_stdout:
                 try:
                     subprocess.run(
-                        ["pbcopy"], input=result.stdout.encode(),
+                        ["pbcopy"], input=result_stdout.encode(),
                         capture_output=True, timeout=2,
                     )
                     print(_box_line(dim("(copied to clipboard)")))
                 except Exception:
                     pass
 
-        if result.returncode != 0:
-            status = red(f"  │ ✗ Exit code: {result.returncode}")
-            pad = max(0, inner_width - len(f" ✗ Exit code: {result.returncode}"))
-            print(status + " " * pad + red("│"))
-            raw_output += f"\n[exit code: {result.returncode}]"
+        # Show elapsed time in status
+        if elapsed < 60:
+            time_str = f"{elapsed:.1f}s"
         else:
-            status_text = " ✓ Done"
+            m, s = divmod(int(elapsed), 60)
+            time_str = f"{m}m {s:02d}s"
+
+        if proc.returncode != 0:
+            status_text = f" ✗ Exit code: {proc.returncode} ({time_str})"
+            pad = max(0, inner_width - len(status_text))
+            print(red(f"  │ {status_text}") + " " * pad + red("│"))
+            raw_output += f"\n[exit code: {proc.returncode}]"
+        else:
+            status_text = f" ✓ Done ({time_str})"
             pad = max(0, inner_width - len(status_text))
             print(red("  │") + green(status_text) + " " * pad + red("│"))
 
     except subprocess.TimeoutExpired:
-        print(_box_line(red("Timed out (120s)")))
-        raw_output = "[timed out after 120s]"
+        _cmd_done.set()
+        timer_thread.join(timeout=1)
+        proc.kill()
+        stdout_data, stderr_data = proc.communicate()
+        raw_output = (stdout_data or b"").decode("utf-8", errors="replace")
+        print(_box_line(yellow("Command still running after 10 minutes")))
+        print(_box_line(dim("Partial output captured. Check server logs for status.")))
+        if raw_output:
+            for line in raw_output.splitlines()[-10:]:
+                print(_box_line(line))
     except Exception as e:
         print(_box_line(red(f"Error: {e}")))
         raw_output = f"[error: {e}]"
@@ -1744,57 +1877,72 @@ def chat_main(args: list[str] | None = None):
                     from .chat_history import _save as _persist
                     _persist(state["_chat_session"])
 
-            # Auto-collapse long responses (like Claude Code)
+            # Auto-collapse long responses (like Claude Code) with Ctrl+O toggle
             response_lines = full_text.splitlines()
             if len(response_lines) > 25:
                 # Clear the streamed output and show collapsed view
-                # Move cursor up to clear streamed lines + agent label
-                lines_to_clear = len(response_lines) + 2  # +2 for agent label + newline
+                lines_to_clear = len(response_lines) + 2
                 for _ in range(lines_to_clear):
-                    sys.stdout.write(f"\033[A\033[2K")  # move up + clear line
+                    sys.stdout.write(f"\033[A\033[2K")
                 sys.stdout.flush()
 
-                # Show collapsed preview
-                print(f"  {agent_label} › ", end="")
-                # First 8 lines
-                for line in response_lines[:8]:
-                    print(f"  {_render_markdown(line)}")
-                print(f"  {dim(f'  ... ({len(response_lines) - 16} lines collapsed) ...')}")
-                # Last 8 lines
-                for line in response_lines[-8:]:
-                    print(f"  {_render_markdown(line)}")
-                print()
-                print(f"  {dim(f'Press Ctrl+O to expand full response ({len(response_lines)} lines)')}")
+                _is_expanded = False
 
-                # Wait for Ctrl+O or Enter
+                def _show_collapsed():
+                    print(f"  {agent_label} › ", end="")
+                    for line in response_lines[:8]:
+                        print(f"  {_render_markdown(line)}")
+                    print(f"  {dim(f'  ... ({len(response_lines) - 16} lines collapsed) ...')}")
+                    for line in response_lines[-8:]:
+                        print(f"  {_render_markdown(line)}")
+                    print()
+                    print(f"  {dim(f'Ctrl+O to expand ({len(response_lines)} lines) · any key to continue')}")
+
+                def _show_expanded():
+                    print(f"  {agent_label} › ")
+                    for line in response_lines:
+                        print(f"  {_render_markdown(line)}")
+                    print()
+                    print(f"  {dim(f'Ctrl+O to collapse · any key to continue')}")
+
+                def _count_display_lines(expanded: bool) -> int:
+                    if expanded:
+                        return len(response_lines) + 3  # agent label + lines + blank + hint
+                    else:
+                        return 8 + 1 + 8 + 3  # first8 + collapsed + last8 + agent+blank+hint
+
+                _show_collapsed()
+
                 try:
                     import tty
                     import termios
                     fd = sys.stdin.fileno()
                     old_settings = termios.tcgetattr(fd)
                     try:
-                        tty.setraw(fd)
-                        ch = sys.stdin.read(1)
-                        if ord(ch) == 15:  # Ctrl+O
-                            # Restore terminal
+                        while True:
+                            tty.setraw(fd)
+                            ch = sys.stdin.read(1)
                             termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
-                            # Show full output in pager
-                            import tempfile
-                            import subprocess as _sp_pager
-                            with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False, prefix="code-agents-") as f:
-                                f.write(full_text)
-                                tmp_path = f.name
-                            pager = os.environ.get("PAGER", "less -R")
-                            _sp_pager.run(pager.split() + [tmp_path])
-                            try:
-                                os.unlink(tmp_path)
-                            except OSError:
-                                pass
-                        # Any other key = continue with collapsed view
+
+                            if ord(ch) == 15:  # Ctrl+O — toggle
+                                # Clear current display
+                                clear_count = _count_display_lines(_is_expanded)
+                                for _ in range(clear_count):
+                                    sys.stdout.write(f"\033[A\033[2K")
+                                sys.stdout.flush()
+
+                                _is_expanded = not _is_expanded
+                                if _is_expanded:
+                                    _show_expanded()
+                                else:
+                                    _show_collapsed()
+                            else:
+                                # Any other key — continue
+                                break
                     finally:
                         termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
                 except (ImportError, OSError, ValueError):
-                    pass  # Not a TTY or Windows — skip collapse feature
+                    pass
                 print()
 
             # Show elapsed time
