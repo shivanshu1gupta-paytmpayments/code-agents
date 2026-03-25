@@ -265,18 +265,56 @@ you › /code-reviewer Review the auth module for security issues
 
 ---
 
+---
+
+## Phase 12: Polish & Reliability
+
+### 43. Three-Option Approval Prompt
+**What:** Command approval now gives three choices:
+```
+Run this command?
+  1. Yes
+  2. Yes & Save to rules (auto-approve next time)
+  3. No
+```
+**Why:** User controls which commands get saved. No surprise auto-saves.
+
+### 44. Live Command Timer with Jenkins Status Polling
+**What:** Commands show live elapsed timer. After 120s, polls Jenkins API every 15s:
+```
+⏱ Running... 45s
+⏱ Running... 2m 15s — Build #854: BUILDING
+⏱ Running... 4m 12s — Build #854: SUCCESS
+```
+**Why:** Know if a build is progressing or stuck — without waiting for timeout.
+
+### 45. Ctrl+O Toggle (Expand/Collapse)
+**What:** Long responses auto-collapse. Press Ctrl+O to expand inline. Press Ctrl+O again to collapse back.
+**Why:** View full output without leaving the chat, then collapse to keep things clean.
+
+### 46. Execution Box Command Wrapping
+**What:** Both approval and execution boxes now wrap long commands across multiple lines — no truncation.
+**Why:** See exactly what you're running. No more `...` hiding the end of the command.
+
+### 47. Chat History Persistence
+**What:** All sessions auto-save to `~/.code-agents/chat_history/`. Resume with `/resume <id>` or `code-agents chat --resume <id>`. Manage with `code-agents sessions`.
+**Why:** Don't lose conversations. Pick up where you left off.
+
+---
+
 ## Stats
 
 | Metric | Count |
 |--------|-------|
-| Commits | 68 |
-| Files changed | 38 |
+| Commits | 75+ |
+| Files changed | 40+ |
 | Tests | 230 |
-| Agents | 13 |
+| Agents | 14 |
 | CLI commands | 23 |
-| Chat slash commands | 14 |
+| Chat slash commands | 17 |
 | Backends | 3 (cursor, claude API, claude CLI) |
 | Make targets | 40+ |
+| Features | 47 |
 
 ---
 

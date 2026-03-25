@@ -43,7 +43,7 @@ you › /code-tester Write unit tests for PaymentService
 | Model | composer 1.5 |
 | Permission Mode | default |
 
-The entry point for users who are unsure which specialist to use. Asks 1-2 clarifying questions about the task, then recommends the appropriate specialist from all 13 agents (code-reasoning, code-writer, code-reviewer, code-tester, qa-regression, redash-query, git-ops, test-coverage, jenkins-build, jenkins-deploy, argocd-verify, pipeline-orchestrator) along with its endpoint URL. Does not perform deep analysis itself.
+The entry point for users who are unsure which specialist to use. Asks 1-2 clarifying questions about the task, then recommends the appropriate specialist from all 14 agents (code-reasoning, code-writer, code-reviewer, code-tester, qa-regression, redash-query, git-ops, test-coverage, jenkins-build, jenkins-deploy, argocd-verify, pipeline-orchestrator) along with its endpoint URL. Does not perform deep analysis itself.
 
 ---
 
@@ -424,7 +424,7 @@ $ code-agents chat
     2.  code-writer        Write/modify code, refactor
     3.  code-reviewer      Review for bugs, security, style
     4.  code-tester        Write tests, debug issues
-    ...13 agents total
+    ...14 agents total
 
   Pick agent [1-12]: 1
 
@@ -505,7 +505,7 @@ When you add a new agent, workflow, or integration to the project:
 8. **Add tests** in `tests/` for any new functionality
 
 Run `poetry run python initiater/run_audit.py --rules workflow` to verify sync.
-Run `poetry run pytest` to verify all 201 tests pass.
+Run `poetry run pytest` to verify all 230 tests pass.
 
 ### Key files that reference agent lists
 - `agents/agent_router.yaml` — system prompt lists all specialists

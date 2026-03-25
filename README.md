@@ -2,7 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
-[![Tests: 201 passing](https://img.shields.io/badge/tests-201%20passing-brightgreen.svg)]()
+[![Tests: 230 passing](https://img.shields.io/badge/tests-230%20passing-brightgreen.svg)]()
 
 AI-powered code agent platform with interactive chat and a built-in CI/CD pipeline. Define agents in YAML, chat with them from the terminal, and automate: **review → test → build → deploy → verify → rollback**.
 
@@ -63,7 +63,9 @@ $ code-agents chat
 - **Agent switching** — `/agent code-writer` switches permanently
 - **Inline delegation** — `/<agent> <prompt>` sends a one-shot to another agent, then returns to your current agent
 - **Tab-completion** — press Tab after `/` to autocomplete slash commands and agent names
-- **Command execution** — agent suggests a shell command? Press `y` to run it right from chat, with JSON pretty-printing and agentic feedback loop
+- **Command execution** — agent suggests a shell command? Choose `1. Yes`, `2. Yes & Save` (auto-approve next time), or `3. No`
+- **Live timer** — shows elapsed time while commands run, polls Jenkins build status after 120s
+- **Auto-collapse** — long responses collapse to preview; press `Ctrl+O` to expand/collapse toggle
 - **`/exec`** — run any command and auto-feed output to agent for analysis
 - **Agent rules** — persistent instructions per-agent or global, auto-refresh mid-chat
 
@@ -114,7 +116,7 @@ code-agents help                         # full help with all args
 ### Information
 | Command | Args | Description |
 |---------|------|-------------|
-| `agents` | | List all 13 agents |
+| `agents` | | List all 14 agents |
 | `curls` | `[category\|agent]` | Show API curl commands. Filter by category or agent |
 | `version` | | Version, Python, install path |
 | `sessions` | `[--all \| delete <id> \| clear]` | List/manage saved chat sessions |
@@ -172,10 +174,11 @@ myrepo/.code-agents/rules/code-writer.md:
   Always add type hints to new functions.
 ```
 
-## Agents (13)
+## Agents (14)
 
 | Agent | Role | Permissions |
 |---|---|---|
+| `auto-pilot` | Autonomous orchestrator — delegates to sub-agents, runs full workflows | Read-only |
 | `agent-router` | Recommends which specialist to use | Read-only |
 | `code-reasoning` | Explains architecture, traces flows, analyzes code | Read-only |
 | `code-writer` | Writes/modifies code, refactors, implements features | Auto-approve edits |
@@ -232,7 +235,7 @@ Full list: `.env.example`
 ## Testing
 
 ```bash
-poetry run pytest       # 201 tests
+poetry run pytest       # 230 tests
 code-agents doctor      # diagnose setup
 code-agents test        # run tests on target repo
 ```
@@ -242,7 +245,7 @@ code-agents test        # run tests on target repo
 1. `code-agents start`
 2. Open WebUI → Settings → Connections → OpenAI
 3. URL: `http://localhost:8000/v1`, Key: any string
-4. All 13 agents appear as models
+4. All 14 agents appear as models
 
 ## Docker
 
