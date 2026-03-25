@@ -2,7 +2,7 @@
 
 ## What This Project Is
 
-Code Agents is an AI-powered code agent platform with interactive chat and a CI/CD pipeline. 14 agents exposed as OpenAI-compatible endpoints. CLI-first: `code-agents init` per repo, `code-agents chat` for interactive use.
+Code Agents is an AI-powered code agent platform with interactive chat and a CI/CD pipeline. 13 agents exposed as OpenAI-compatible endpoints. CLI-first: `code-agents init` per repo, `code-agents chat` for interactive use.
 
 ## Quick Reference
 
@@ -27,7 +27,7 @@ code-agents restart                 # restart server (shutdown + start)
 code-agents rules                   # manage agent rules (list/create/edit/delete)
 code-agents completions --install   # install shell tab-completion
 code-agents migrate                 # migrate legacy .env to centralized config
-code-agents agents                  # list 14 agents
+code-agents agents                  # list 13 agents
 code-agents config                  # show config (secrets masked)
 code-agents logs [N]                # tail log file
 code-agents branches                # list git branches
@@ -65,7 +65,7 @@ poetry run pytest                   # 230 tests
 - **CI/CD clients**: `git_client.py`, `testing_client.py`, `jenkins_client.py`, `argocd_client.py`
 - **CI/CD routers**: `routers/git_ops.py`, `testing.py`, `jenkins.py`, `argocd.py`, `pipeline.py`
 - **`pipeline_state.py`** — 6-step state machine (connect → review/test → build → deploy → verify → rollback)
-- **`agents/*.yaml`** — 14 agent definitions
+- **`agents/*.yaml`** — 13 agent definitions
 - **`tests/`** — 230 tests
 
 ## Key Patterns

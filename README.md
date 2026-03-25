@@ -116,7 +116,7 @@ code-agents help                         # full help with all args
 ### Information
 | Command | Args | Description |
 |---------|------|-------------|
-| `agents` | | List all 14 agents |
+| `agents` | | List all 13 agents |
 | `curls` | `[category\|agent]` | Show API curl commands. Filter by category or agent |
 | `version` | | Version, Python, install path |
 | `sessions` | `[--all \| delete <id> \| clear]` | List/manage saved chat sessions |
@@ -187,8 +187,7 @@ myrepo/.code-agents/rules/code-writer.md:
 | `redash-query` | SQL queries, schema exploration via Redash | Read-only |
 | `git-ops` | Git branches, diffs, logs, push | Read-only |
 | `test-coverage` | Runs test suites, coverage reports, finds gaps | Auto-approve edits |
-| `jenkins-build` | Triggers/monitors Jenkins CI builds | Read-only |
-| `jenkins-deploy` | Triggers/monitors Jenkins deployments | Read-only |
+| `jenkins-cicd` | Build and deploy via Jenkins — end-to-end CI/CD | Read-only |
 | `argocd-verify` | Checks ArgoCD pods, scans logs, rollbacks | Read-only |
 | `qa-regression` | Runs regression suites, writes missing tests, eliminates manual QA | Auto-approve edits |
 | `pipeline-orchestrator` | Guides full CI/CD pipeline end-to-end | Read-only |
@@ -245,7 +244,7 @@ code-agents test        # run tests on target repo
 1. `code-agents start`
 2. Open WebUI → Settings → Connections → OpenAI
 3. URL: `http://localhost:8000/v1`, Key: any string
-4. All 14 agents appear as models
+4. All 13 agents appear as models
 
 ## Docker
 

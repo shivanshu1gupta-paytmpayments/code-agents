@@ -123,7 +123,9 @@ routers/completions.py
 
 | Module | Purpose |
 |--------|---------|
-| `cli.py` | 23 CLI commands. Entry point: `code-agents <command>` |
+| `cli.py` | 23 CLI commands. Entry point: `code-agents <command>` (2134 lines — commands are hard to split further) |
+| `cli_helpers.py` | Shared helpers: colors, server URL, API calls, env loading |
+| `cli_completions.py` | Shell completions (zsh/bash) + `cmd_help()` |
 | `chat.py` | Interactive REPL. Slash commands, agent switching, command execution, agentic loop, session persistence |
 | `app.py` | FastAPI server. CORS, lifespan, request/response logging middleware |
 | `main.py` | Uvicorn launcher. Loads env, starts server |
@@ -139,7 +141,9 @@ routers/completions.py
 | `env_loader.py` | Two-tier config: `~/.code-agents/config.env` (global) + `.env.code-agents` (per-repo) |
 | `rules_loader.py` | Two-tier rules: `~/.code-agents/rules/` (global) + `.code-agents/rules/` (project). Auto-refresh on every message |
 | `chat_history.py` | Session persistence: auto-save to `~/.code-agents/chat_history/`, resume, list, delete |
-| `setup.py` | Interactive setup wizard (7 steps). `prompt()` with validation + transform |
+| `setup.py` | Interactive setup wizard (7 steps) |
+| `setup_ui.py` | Setup UI: colors, prompts, validators |
+| `setup_env.py` | Env file: parse, write, sections |
 
 ### CI/CD Clients
 
@@ -318,8 +322,7 @@ extra_args:                            # backend-specific flags
 | `redash-query` | SQL via Redash | cursor | default |
 | `git-ops` | Git operations | cursor | default |
 | `test-coverage` | Run tests, coverage | cursor | acceptEdits |
-| `jenkins-build` | Trigger CI builds | cursor | default |
-| `jenkins-deploy` | Trigger deployments | cursor | default |
+| `jenkins-cicd` | Build & deploy via Jenkins | cursor | default |
 | `argocd-verify` | Verify deployments | cursor | default |
 | `pipeline-orchestrator` | End-to-end CI/CD | cursor | default |
 

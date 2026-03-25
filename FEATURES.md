@@ -309,7 +309,7 @@ Run this command?
 | Commits | 75+ |
 | Files changed | 40+ |
 | Tests | 230 |
-| Agents | 14 |
+| Agents | 13 |
 | CLI commands | 23 |
 | Chat slash commands | 17 |
 | Backends | 3 (cursor, claude API, claude CLI) |
