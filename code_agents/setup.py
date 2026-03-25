@@ -10,175 +10,27 @@ Walks through Python checks, dependency installation, key prompts,
 
 from __future__ import annotations
 
-import datetime
-import getpass
 import os
-import re
-import shutil
 import subprocess
 import sys
-import urllib.parse
 from pathlib import Path
-from typing import Callable, Optional
+
+# Re-export from split modules for backward compatibility
+from .setup_ui import (  # noqa: F401
+    bold, green, yellow, red, cyan, dim,
+    prompt, prompt_yes_no, prompt_choice,
+    validate_url, validate_port, validate_job_path, clean_job_path,
+)
+from .setup_env import (  # noqa: F401
+    _ENV_SECTIONS, parse_env_file, _write_env_to_path, write_env_file,
+)
 
 # ---------------------------------------------------------------------------
 # ANSI color helpers (no dependencies)
 # ---------------------------------------------------------------------------
 
-_USE_COLOR = sys.stdout.isatty()
 
-
-def _wrap(code: str, text: str) -> str:
-    if not _USE_COLOR:
-        return text
-    return f"\033[{code}m{text}\033[0m"
-
-
-def bold(t: str) -> str:
-    return _wrap("1", t)
-
-
-def green(t: str) -> str:
-    return _wrap("32", t)
-
-
-def yellow(t: str) -> str:
-    return _wrap("33", t)
-
-
-def red(t: str) -> str:
-    return _wrap("31", t)
-
-
-def cyan(t: str) -> str:
-    return _wrap("36", t)
-
-
-def dim(t: str) -> str:
-    return _wrap("2", t)
-
-
-# ---------------------------------------------------------------------------
-# Prompt helpers
-# ---------------------------------------------------------------------------
-
-
-def prompt(
-    label: str,
-    default: Optional[str] = None,
-    secret: bool = False,
-    required: bool = False,
-    validator: Optional[Callable[[str], bool]] = None,
-    transform: Optional[Callable[[str], str]] = None,
-    error_msg: str = "Invalid input.",
-) -> str:
-    """Prompt user for input. Loops on validation failure. Optional transform applied before return."""
-    suffix = f" [{default}]" if default else ""
-    while True:
-        try:
-            if secret:
-                value = getpass.getpass(f"  {label}{suffix}: ")
-            else:
-                value = input(f"  {label}{suffix}: ")
-        except EOFError:
-            value = ""
-
-        value = value.strip()
-        if not value and default is not None:
-            value = default
-        if required and not value:
-            print(red("    Required — please enter a value."))
-            continue
-        if value and validator and not validator(value):
-            print(red(f"    {error_msg}"))
-            continue
-        # Apply transform (e.g., clean job path)
-        if value and transform:
-            value = transform(value)
-        return value
-
-
-def prompt_yes_no(label: str, default: bool = True) -> bool:
-    """Y/n or y/N prompt."""
-    hint = "Y/n" if default else "y/N"
-    while True:
-        try:
-            value = input(f"  {label} [{hint}]: ").strip().lower()
-        except EOFError:
-            value = ""
-        if not value:
-            return default
-        if value in ("y", "yes"):
-            return True
-        if value in ("n", "no"):
-            return False
-        print(red("    Please enter y or n."))
-
-
-def prompt_choice(label: str, choices: list[str], default: int = 1) -> int:
-    """Numbered choice prompt. Returns 1-based index."""
-    for i, c in enumerate(choices, 1):
-        marker = bold("*") if i == default else " "
-        print(f"    {marker} [{i}] {c}")
-    while True:
-        try:
-            value = input(f"  {label} (default: {default}): ").strip()
-        except EOFError:
-            value = ""
-        if not value:
-            return default
-        try:
-            n = int(value)
-            if 1 <= n <= len(choices):
-                return n
-        except ValueError:
-            pass
-        print(red(f"    Enter a number 1-{len(choices)}."))
-
-
-# ---------------------------------------------------------------------------
-# Validators
-# ---------------------------------------------------------------------------
-
-
-def validate_url(v: str) -> bool:
-    parsed = urllib.parse.urlparse(v)
-    return parsed.scheme in ("http", "https") and bool(parsed.netloc)
-
-
-def validate_port(v: str) -> bool:
-    try:
-        return 1 <= int(v) <= 65535
-    except ValueError:
-        return False
-
-
-def validate_job_path(v: str) -> bool:
-    """Jenkins job should be a clean folder path, not a full URL."""
-    if v.startswith("http://") or v.startswith("https://"):
-        return False
-    return bool(v.strip("/"))
-
-
-def clean_job_path(v: str) -> str:
-    """Strip 'job/' prefixes from Jenkins paths pasted from browser URLs."""
-    raw_parts = [p for p in v.strip("/").split("/") if p]
-    parts = []
-    for i, p in enumerate(raw_parts):
-        if p == "job" and i + 1 < len(raw_parts):
-            continue  # skip 'job' before a real name
-        else:
-            parts.append(p)
-    cleaned = "/".join(parts)
-    if cleaned != v.strip("/"):
-        print(dim(f"    Auto-cleaned: {v} → {cleaned}"))
-    return cleaned
-
-
-# ---------------------------------------------------------------------------
-# Step functions
-# ---------------------------------------------------------------------------
-
+# UI helpers moved to setup_ui.py, env management moved to setup_env.py
 
 def print_banner():
     print()
@@ -454,142 +306,8 @@ def prompt_integrations() -> dict[str, str]:
 # .env file writer
 # ---------------------------------------------------------------------------
 
-_ENV_SECTIONS = [
-    ("# Core", ["CURSOR_API_KEY", "CURSOR_API_URL", "CODE_AGENTS_HTTP_ONLY", "ANTHROPIC_API_KEY"]),
-    ("# Server", ["HOST", "PORT", "LOG_LEVEL", "CODE_AGENTS_PUBLIC_BASE_URL", "OPEN_WEBUI_PUBLIC_URL"]),
-    ("# Target Repository", ["TARGET_REPO_PATH", "TARGET_REPO_REMOTE"]),
-    ("# Testing", ["TARGET_TEST_COMMAND", "TARGET_COVERAGE_THRESHOLD"]),
-    ("# Jenkins", ["JENKINS_URL", "JENKINS_USERNAME", "JENKINS_API_TOKEN", "JENKINS_BUILD_JOB", "JENKINS_DEPLOY_JOB"]),
-    ("# ArgoCD", ["ARGOCD_URL", "ARGOCD_AUTH_TOKEN", "ARGOCD_APP_NAME", "ARGOCD_VERIFY_SSL"]),
-    ("# Elasticsearch", ["ELASTICSEARCH_URL", "ELASTICSEARCH_CLOUD_ID", "ELASTICSEARCH_API_KEY",
-                          "ELASTICSEARCH_USERNAME", "ELASTICSEARCH_PASSWORD", "ELASTICSEARCH_CA_CERTS",
-                          "ELASTICSEARCH_VERIFY_SSL"]),
-    ("# Atlassian OAuth", ["ATLASSIAN_OAUTH_CLIENT_ID", "ATLASSIAN_OAUTH_CLIENT_SECRET",
-                           "ATLASSIAN_OAUTH_SCOPES", "ATLASSIAN_CLOUD_SITE_URL",
-                           "ATLASSIAN_OAUTH_SUCCESS_REDIRECT", "CODE_AGENTS_HTTPS_VERIFY"]),
-    ("# Redash", ["REDASH_BASE_URL", "REDASH_API_KEY", "REDASH_USERNAME", "REDASH_PASSWORD"]),
-]
 
-
-def parse_env_file(path: Path) -> dict[str, str]:
-    """Parse a .env file into a dict."""
-    result = {}
-    if not path.exists() or not path.is_file():
-        return result
-    for line in path.read_text().splitlines():
-        line = line.strip()
-        if not line or line.startswith("#"):
-            continue
-        match = re.match(r'^([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)', line)
-        if match:
-            key = match.group(1)
-            value = match.group(2).strip()
-            # Remove surrounding quotes
-            if len(value) >= 2 and value[0] == value[-1] and value[0] in ('"', "'"):
-                value = value[1:-1]
-            result[key] = value
-    return result
-
-
-def _write_env_to_path(env_path: Path, env_vars: dict[str, str], label: str) -> None:
-    """Write env vars to a specific path with section grouping."""
-    # Ensure parent directory exists
-    env_path.parent.mkdir(parents=True, exist_ok=True)
-
-    if env_path.exists():
-        existing = parse_env_file(env_path)
-        existing_count = len(existing)
-        print(f"  Found existing {label} with {existing_count} configured variables.")
-        print(f"    [O] Overwrite with new values")
-        print(f"    [M] Merge (keep existing, add new)")
-        print(f"    [B] Backup existing, then overwrite")
-        print(f"    [C] Cancel")
-        while True:
-            try:
-                choice = input("  Choice [M]: ").strip().lower() or "m"
-            except EOFError:
-                choice = "c"
-            if choice in ("o", "m", "b", "c"):
-                break
-            print(red("    Enter O, M, B, or C."))
-
-        if choice == "c":
-            print(yellow(f"  Skipped — {label} not modified."))
-            return
-        if choice == "b":
-            ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-            backup = env_path.with_suffix(f".backup.{ts}")
-            shutil.copy2(env_path, backup)
-            print(green(f"  ✓ Backed up to {backup}"))
-        if choice == "m":
-            merged = dict(existing)
-            added = 0
-            for k, v in env_vars.items():
-                if k not in merged:
-                    merged[k] = v
-                    added += 1
-            env_vars = merged
-            print(dim(f"    Merged: {added} new keys added, {existing_count} existing kept."))
-
-    # Build the file content with sections
-    lines = [f"# Generated by code-agents init — {label}", ""]
-    written_keys: set[str] = set()
-
-    for section_comment, keys in _ENV_SECTIONS:
-        section_vars = {k: env_vars[k] for k in keys if k in env_vars}
-        if section_vars:
-            lines.append(section_comment)
-            for k, v in section_vars.items():
-                if " " in v:
-                    lines.append(f'{k}="{v}"')
-                else:
-                    lines.append(f"{k}={v}")
-                written_keys.add(k)
-            lines.append("")
-
-    remaining = {k: v for k, v in env_vars.items() if k not in written_keys}
-    if remaining:
-        lines.append("# Other")
-        for k, v in remaining.items():
-            if " " in v:
-                lines.append(f'{k}="{v}"')
-            else:
-                lines.append(f"{k}={v}")
-        lines.append("")
-
-    content = "\n".join(lines)
-    env_path.write_text(content)
-
-    try:
-        os.chmod(env_path, 0o600)
-    except OSError:
-        pass
-
-    count = len(env_vars)
-    print(green(f"  ✓ {label} written ({count} variables, permissions: 600)"))
-    print(f"    {dim(str(env_path))}")
-    print()
-
-
-def write_env_file(env_vars: dict[str, str]) -> None:
-    """Write env vars to centralized global + per-repo config files."""
-    from .env_loader import GLOBAL_ENV_PATH, PER_REPO_FILENAME, split_vars
-
-    global_vars, repo_vars = split_vars(env_vars)
-
-    if global_vars:
-        print(bold("  Writing global config (API keys, server, integrations):"))
-        _write_env_to_path(GLOBAL_ENV_PATH, global_vars, "global config")
-
-    if repo_vars:
-        print(bold("  Writing per-repo config (Jenkins, ArgoCD, testing):"))
-        _write_env_to_path(Path(PER_REPO_FILENAME), repo_vars, "repo config")
-
-
-# ---------------------------------------------------------------------------
-# Server launcher
-# ---------------------------------------------------------------------------
-
+# _ENV_SECTIONS, parse_env_file, _write_env_to_path, write_env_file → setup_env.py
 
 def start_server() -> None:
     """Load .env and start the Code Agents server."""
