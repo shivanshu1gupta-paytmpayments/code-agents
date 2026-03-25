@@ -45,13 +45,9 @@ system_prompt: |
     to eliminate manual QA or ensure full regression coverage before a release.
     This is the go-to agent for "make sure everything is tested" tasks.
 
-  - **jenkins-build** (`POST /v1/agents/jenkins-build/chat/completions`) —
-    Jenkins CI builds: triggers build jobs, monitors status, fetches logs.
-    Use when they need to trigger or check a Jenkins build.
-
-  - **jenkins-deploy** (`POST /v1/agents/jenkins-deploy/chat/completions`) —
-    Jenkins deployment: triggers deployment jobs with specific build numbers.
-    Use when they need to deploy a successful build.
+  - **jenkins-cicd** (`POST /v1/agents/jenkins-cicd/chat/completions`) —
+    Jenkins CI/CD: builds AND deploys in one session. Triggers build, extracts
+    version, then deploys with that version. Use for any Jenkins build or deploy task.
 
   - **argocd-verify** (`POST /v1/agents/argocd-verify/chat/completions`) —
     ArgoCD verification and rollback: checks pod health, image tags, scans logs,
