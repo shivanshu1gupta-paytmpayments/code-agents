@@ -28,14 +28,14 @@ class TestAgentRoles:
             "code-reasoning", "code-writer", "code-reviewer", "code-tester",
             "qa-regression", "redash-query", "git-ops", "test-coverage",
             "jenkins-build", "jenkins-deploy", "argocd-verify",
-            "pipeline-orchestrator", "agent-router",
+            "pipeline-orchestrator", "auto-pilot", "agent-router",
         ]
         for agent in expected:
             assert agent in AGENT_ROLES, f"Missing role for {agent}"
             assert len(AGENT_ROLES[agent]) > 10, f"Role too short for {agent}"
 
     def test_role_count(self):
-        assert len(AGENT_ROLES) == 13
+        assert len(AGENT_ROLES) == 14
 
 
 class TestAgentWelcome:
@@ -46,7 +46,7 @@ class TestAgentWelcome:
             assert agent in AGENT_WELCOME, f"Missing welcome for {agent}"
 
     def test_welcome_count(self):
-        assert len(AGENT_WELCOME) == 13
+        assert len(AGENT_WELCOME) == 14
 
     def test_welcome_structure(self):
         """Each welcome is a tuple of (title, capabilities, examples)."""
