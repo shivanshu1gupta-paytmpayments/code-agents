@@ -698,9 +698,45 @@ def _select_agent(agents: dict[str, str]) -> Optional[str]:
         print(red(f"    Enter a number 1-{len(sorted_agents)}, or an agent name."))
 
 
+def _format_session_duration(seconds: float) -> str:
+    """Format session duration: 2m 15s, 1h 23m, etc."""
+    if seconds < 60:
+        return f"{seconds:.0f}s"
+    elif seconds < 3600:
+        m, s = divmod(int(seconds), 60)
+        return f"{m}m {s:02d}s"
+    else:
+        h, remainder = divmod(int(seconds), 3600)
+        m, s = divmod(remainder, 60)
+        return f"{h}h {m:02d}m"
+
+
+def _print_session_summary(
+    session_start: float, message_count: int, agent_name: str,
+    commands_run: int,
+) -> None:
+    """Print session summary when chat ends — like Claude CLI."""
+    import time as _t
+    elapsed = _t.monotonic() - session_start
+    duration = _format_session_duration(elapsed)
+
+    print()
+    print(f"  {bold(cyan('━━━ Session Summary ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'))}")
+    print(f"  {dim('Agent:')}       {bold(agent_name)}")
+    print(f"  {dim('Messages:')}    {message_count}")
+    print(f"  {dim('Commands:')}    {commands_run}")
+    print(f"  {dim('Duration:')}    {bold(duration)}")
+    print(f"  {bold(cyan('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'))}")
+    print()
+
+
 def chat_main(args: list[str] | None = None):
     """Entry point for the interactive chat REPL."""
     args = args or []
+    import time as _session_time
+    _session_start = _session_time.monotonic()
+    _session_messages = 0
+    _session_commands = 0
 
     # Load env — global config + per-repo overrides
     cwd = os.environ.get("CODE_AGENTS_USER_CWD") or os.getcwd()
@@ -992,9 +1028,7 @@ def chat_main(args: list[str] | None = None):
                 # Regular slash command
                 result = _handle_command(user_input, state, url)
                 if result == "quit":
-                    print()
-                    print(dim("  Chat ended."))
-                    print()
+                    _print_session_summary(_session_start, _session_messages, state["agent"], _session_commands)
                     break
                 elif result == "exec_feedback":
                     # /execute ran a command — feed output to agent
@@ -1056,6 +1090,8 @@ def chat_main(args: list[str] | None = None):
             # Only add current user_input if not already the last message in history
             if not messages or messages[-1].get("content") != user_input:
                 messages.append({"role": "user", "content": user_input})
+
+            _session_messages += 1
 
             # Stream response with spinner + live timer
             current_agent = state["agent"]
@@ -1184,16 +1220,36 @@ def chat_main(args: list[str] | None = None):
                 try:
                     import tty
                     import termios
+                    import signal
+
                     fd = sys.stdin.fileno()
                     old_settings = termios.tcgetattr(fd)
+
+                    # Ensure terminal is ALWAYS restored — even on signals
+                    def _restore_terminal(signum=None, frame=None):
+                        try:
+                            termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+                        except Exception:
+                            pass
+
+                    old_sigint = signal.signal(signal.SIGINT, _restore_terminal)
+                    old_sigterm = signal.signal(signal.SIGTERM, _restore_terminal)
+
                     try:
                         while True:
                             tty.setraw(fd)
-                            ch = sys.stdin.read(1)
-                            termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+                            try:
+                                ch = sys.stdin.read(1)
+                            except Exception:
+                                break
+                            finally:
+                                # ALWAYS restore immediately after raw read
+                                termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+
+                            if not ch or ord(ch) == 3:  # Ctrl+C or EOF
+                                break
 
                             if ord(ch) == 15:  # Ctrl+O — toggle
-                                # Clear current display
                                 clear_count = _count_display_lines(_is_expanded)
                                 for _ in range(clear_count):
                                     sys.stdout.write(f"\033[A\033[2K")
@@ -1205,10 +1261,12 @@ def chat_main(args: list[str] | None = None):
                                 else:
                                     _show_collapsed()
                             else:
-                                # Any other key — continue
                                 break
                     finally:
-                        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+                        # Triple-ensure terminal is restored
+                        _restore_terminal()
+                        signal.signal(signal.SIGINT, old_sigint)
+                        signal.signal(signal.SIGTERM, old_sigterm)
                 except (ImportError, OSError, ValueError):
                     pass
                 print()
@@ -1224,6 +1282,7 @@ def chat_main(args: list[str] | None = None):
                 if commands:
                     try:
                         exec_results = _offer_run_commands(commands, state.get("repo_path", cwd), agent_name=current_agent)
+                        _session_commands += len(exec_results)
                     except (EOFError, KeyboardInterrupt):
                         print()
                         exec_results = []
@@ -1279,13 +1338,9 @@ def chat_main(args: list[str] | None = None):
 
         except KeyboardInterrupt:
             print()
-            print()
-            print(dim("  Chat ended. (Ctrl+C)"))
-            print()
+            _print_session_summary(_session_start, _session_messages, state["agent"], _session_commands)
             break
 
         except EOFError:
-            print()
-            print(dim("  Chat ended."))
-            print()
+            _print_session_summary(_session_start, _session_messages, state["agent"], _session_commands)
             break

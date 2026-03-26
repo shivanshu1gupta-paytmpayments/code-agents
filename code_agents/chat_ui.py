@@ -128,34 +128,57 @@ def _tab_selector(prompt_text: str, options: list[str], default: int = 0) -> int
     try:
         import tty
         import termios
+        import signal
+
         fd = sys.stdin.fileno()
         old_settings = termios.tcgetattr(fd)
+
+        def _restore(signum=None, frame=None):
+            try:
+                termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+            except Exception:
+                pass
+
+        old_sigint = signal.signal(signal.SIGINT, _restore)
+        old_sigterm = signal.signal(signal.SIGTERM, _restore)
+
         try:
-            tty.setraw(fd)
             while True:
-                ch = sys.stdin.read(1)
-                if ch == '\t':
-                    selected = (selected + 1) % len(options)
-                    termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
-                    _render()
-                    tty.setraw(fd)
-                elif ch == '\r' or ch == '\n':
+                tty.setraw(fd)
+                try:
+                    ch = sys.stdin.read(1)
+                except Exception:
                     break
-                elif ch == '\x03':
+                finally:
                     termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+
+                if not ch or ch == '\x03':  # Ctrl+C or EOF
                     print()
                     return len(options) - 1
+
+                if ch == '\t':
+                    selected = (selected + 1) % len(options)
+                    _render()
+                elif ch == '\r' or ch == '\n':
+                    break
                 elif ch == '\x1b':
-                    ch2 = sys.stdin.read(1)
-                    if ch2 == '[':
-                        ch3 = sys.stdin.read(1)
-                        if ch3 in ('C', 'D'):
-                            selected = (selected + 1) % len(options)
-                            termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
-                            _render()
-                            tty.setraw(fd)
+                    # Arrow keys: read remaining bytes (non-raw now)
+                    tty.setraw(fd)
+                    try:
+                        ch2 = sys.stdin.read(1)
+                        if ch2 == '[':
+                            ch3 = sys.stdin.read(1)
+                            if ch3 in ('C', 'D'):
+                                selected = (selected + 1) % len(options)
+                    except Exception:
+                        pass
+                    finally:
+                        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+                    _render()
         finally:
-            termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+            _restore()
+            signal.signal(signal.SIGINT, old_sigint)
+            signal.signal(signal.SIGTERM, old_sigterm)
     except (ImportError, OSError, ValueError):
         print()
         for i, opt in enumerate(options):

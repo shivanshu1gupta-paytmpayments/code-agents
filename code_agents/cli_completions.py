@@ -145,7 +145,7 @@ _code_agents_completions() {{
                 COMPREPLY=( $(compgen -W "start status advance rollback" -- "$cur") )
                 ;;
             chat)
-                COMPREPLY=( $(compgen -W "agent-router argocd-verify code-reasoning code-reviewer code-tester code-writer git-ops jenkins-build jenkins-deploy pipeline-orchestrator redash-query test-coverage" -- "$cur") )
+                COMPREPLY=( $(compgen -W "agent-router argocd-verify code-reasoning code-reviewer code-tester code-writer git-ops jenkins-cicd pipeline-orchestrator redash-query test-coverage" -- "$cur") )
                 ;;
             start)
                 COMPREPLY=( $(compgen -W "--fg --foreground" -- "$cur") )
@@ -158,7 +158,7 @@ _code_agents_completions() {{
                 ;;
         esac
     elif [[ $COMP_CWORD -eq 4 ]] && [[ "$prev" == "--agent" ]]; then
-        COMPREPLY=( $(compgen -W "agent-router argocd-verify code-reasoning code-reviewer code-tester code-writer git-ops jenkins-build jenkins-deploy pipeline-orchestrator redash-query test-coverage" -- "$cur") )
+        COMPREPLY=( $(compgen -W "agent-router argocd-verify code-reasoning code-reviewer code-tester code-writer git-ops jenkins-cicd pipeline-orchestrator redash-query test-coverage" -- "$cur") )
     fi
 }}
 
@@ -320,8 +320,7 @@ def cmd_help():
     p(f"        redash-query         {dim('SQL queries, explore database schemas')}")
     p(f"        git-ops              {dim('Git branches, diffs, logs, push')}")
     p(f"        test-coverage        {dim('Run tests, coverage reports, find gaps')}")
-    p(f"        jenkins-build        {dim('Trigger/monitor Jenkins CI builds')}")
-    p(f"        jenkins-deploy       {dim('Trigger/monitor Jenkins deployments')}")
+    p(f"        jenkins-cicd         {dim('Build and deploy via Jenkins — end-to-end CI/CD')}")
     p(f"        argocd-verify        {dim('Check pods, scan logs, rollback deployments')}")
     p(f"        pipeline-orchestrator {dim('Guide full CI/CD pipeline end-to-end')}")
     p(f"        agent-router         {dim('Help pick the right specialist agent')}")

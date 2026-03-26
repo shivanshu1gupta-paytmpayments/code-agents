@@ -1976,13 +1976,10 @@ def _curls_for_agent(agent_name: str, url: str):
             ("Run tests", "Run the test suite and show coverage"),
             ("Find gaps", "What new code is missing test coverage?"),
         ],
-        "jenkins-build": [
-            ("Trigger build", "Trigger a build for the feature-123 branch"),
-            ("Check status", "What's the status of the last build?"),
-        ],
-        "jenkins-deploy": [
-            ("Deploy build", "Deploy build #42 to staging"),
-            ("Check deploy", "Is the deployment job still running?"),
+        "jenkins-cicd": [
+            ("Build", "Build pg-acquiring-biz on release branch with java 21"),
+            ("Deploy", "Deploy version 1.2.3 to dev"),
+            ("Build & Deploy", "Build and deploy pg-acquiring-biz to dev"),
         ],
         "argocd-verify": [
             ("Check pods", "Are all pods healthy after the latest deployment?"),

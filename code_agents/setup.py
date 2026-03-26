@@ -187,35 +187,32 @@ def prompt_cicd_pipeline() -> dict[str, str]:
     # Jenkins
     if prompt_yes_no("Configure Jenkins?", default=False):
         print(dim("    Jenkins base URL without job path"))
-        print(dim("    Example: https://jenkins.pg2nonprod.paytmpayments.in/"))
+        print(dim("    Example: https://jenkins.mycompany.com/"))
         env["JENKINS_URL"] = prompt(
             "JENKINS_URL",
-            default="https://jenkins.pg2nonprod.paytmpayments.in/",
             required=True,
             validator=validate_url,
             error_msg="Must be a valid URL.",
         )
         print(dim("    Jenkins user with API token access"))
-        print(dim("    Example: shivanshu1.gupta@paytmpayments.com"))
         env["JENKINS_USERNAME"] = prompt("JENKINS_USERNAME", required=True)
         print(dim("    Manage Jenkins → Users → Configure → API Token"))
         env["JENKINS_API_TOKEN"] = prompt("JENKINS_API_TOKEN", secret=True, required=True)
         print()
         print(dim("    Use the folder path from your Jenkins URL, separated by /"))
         print(dim("    Example: If your Jenkins URL is:"))
-        print(dim("      https://jenkins.company.com/job/pg2/job/pg2-dev-build-jobs/job/pg2-dev-pg-acquiring-biz/"))
-        print(dim("    Then the job path is: pg2/pg2-dev-build-jobs/pg2-dev-pg-acquiring-biz"))
+        print(dim("      https://jenkins.company.com/job/folder/job/subfolder/job/my-service/"))
+        print(dim("    Then the job path is: folder/subfolder/my-service"))
         print(dim("    DO NOT include 'job/' prefix — just use folder names separated by /"))
         print()
         env["JENKINS_BUILD_JOB"] = prompt(
             "JENKINS_BUILD_JOB",
-            default="pg2/pg2-dev-build-jobs/pg2-dev-pg-acquiring-biz",
             required=True,
             validator=validate_job_path,
-            error_msg="Enter a job path like 'pg2/pg2-dev-build-jobs/pg2-dev-pg-acquiring-biz', not a full URL.",
+            transform=clean_job_path,
+            error_msg="Enter a job path like 'folder/subfolder/my-service', not a full URL.",
         )
         print(dim("    Deploy job path (same as build job if same pipeline)"))
-        print(dim("    Example: pg2/pg2-dev-build-jobs/deploy"))
         env["JENKINS_DEPLOY_JOB"] = prompt(
             "JENKINS_DEPLOY_JOB",
             default=env.get("JENKINS_BUILD_JOB", ""),

@@ -211,12 +211,13 @@ def _run_single_command(cmd: str, cwd: str) -> str:
         def _poll_jenkins_status() -> str:
             try:
                 import httpx
-                r = httpx.get("http://127.0.0.1:8000/health", timeout=2.0)
+                from .chat_server import _server_url
+                r = httpx.get(f"{_server_url()}/health", timeout=2.0)
                 if r.status_code != 200:
                     return ""
                 build_job = os.getenv("JENKINS_BUILD_JOB", "")
                 if build_job:
-                    r = httpx.get(f"http://127.0.0.1:8000/jenkins/build/{build_job}/last", timeout=5.0)
+                    r = httpx.get(f"{_server_url()}/jenkins/build/{build_job}/last", timeout=5.0)
                     if r.status_code == 200:
                         data = r.json()
                         building = data.get("building", False)
