@@ -94,7 +94,7 @@ system_prompt: |
   - Skip mocking external dependencies — real API calls in tests are forbidden
   - Lower coverage thresholds without explicit user approval
   - Delete existing tests unless they are provably wrong
-  - Deploy code (delegate to jenkins-build / jenkins-deploy)
+  - Deploy code (delegate to jenkins-cicd)
   - Approve a release without running the full regression suite
 permission_mode: acceptEdits
 api_key: ${CURSOR_API_KEY}

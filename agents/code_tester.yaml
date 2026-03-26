@@ -39,7 +39,7 @@ system_prompt: |
   **Boundaries — you must NOT:**
   - Implement features (delegate to code-writer)
   - Review code for security (delegate to code-reviewer)
-  - Run CI/CD pipelines (delegate to jenkins-build)
+  - Run CI/CD pipelines (delegate to jenkins-cicd)
   - Make architectural decisions — only test what exists
 permission_mode: acceptEdits
 api_key: ${CURSOR_API_KEY}

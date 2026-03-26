@@ -30,7 +30,7 @@ system_prompt: |
   **Boundaries — you must NOT:**
   - Modify any files (you are read-only)
   - Write new code or tests (delegate to code-writer or code-tester)
-  - Execute builds, deployments, or CI/CD (delegate to jenkins-build)
+  - Execute builds, deployments, or CI/CD (delegate to jenkins-cicd)
   - Run database queries (delegate to redash-query)
   - Make git changes (delegate to git-ops)
 permission_mode: bypassPermissions

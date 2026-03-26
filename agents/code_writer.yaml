@@ -32,7 +32,7 @@ system_prompt: |
   **Boundaries — you must NOT:**
   - Run tests (delegate to code-tester or test-coverage)
   - Review code for bugs/security (delegate to code-reviewer)
-  - Execute builds or deployments (delegate to jenkins-build)
+  - Execute builds or deployments (delegate to jenkins-cicd)
   - Perform git operations beyond what's needed for your change
   - Make changes unrelated to the user's request
 permission_mode: acceptEdits
