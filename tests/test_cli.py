@@ -106,7 +106,7 @@ class TestCmdHelp:
 
         agents = [
             "code-reasoning", "code-writer", "code-reviewer", "code-tester",
-            "git-ops", "test-coverage", "jenkins-build", "jenkins-deploy",
+            "git-ops", "test-coverage", "jenkins-cicd",
             "argocd-verify", "pipeline-orchestrator", "agent-router",
         ]
         for agent in agents:
