@@ -50,7 +50,7 @@ code-agents chat --resume <id>      # resume a saved session
 code-agents version                 # version info
 
 # Dev
-poetry run pytest                   # 230 tests
+poetry run pytest                   # 247 tests
 poetry run python initiater/run_audit.py
 ```
 
@@ -74,9 +74,10 @@ poetry run python initiater/run_audit.py
 - **`code_agents/jenkins_client.py`** — Jenkins REST API client (trigger, poll, logs, CSRF crumb)
 - **`code_agents/argocd_client.py`** — ArgoCD REST API client (status, pods, logs, sync, rollback)
 - **`code_agents/pipeline_state.py`** — In-memory 6-step pipeline state machine
+- **`code_agents/connection_validator.py`** — Async backend connection validation (cursor CLI/HTTP, claude SDK/CLI). Validates at session start
 - **`code_agents/routers/`** — FastAPI route handlers: completions, agents_list, git_ops, testing, jenkins, argocd, pipeline, redash, elasticsearch, atlassian_oauth_web
 - **`agents/*.yaml`** — 13 agent definitions
-- **`tests/`** — 230 tests
+- **`tests/`** — 247 tests
 - **`initiater/`** — Project quality audit system (14 rules)
 
 ## Key Patterns
@@ -107,16 +108,17 @@ Key vars (see `.env.example` for full list):
 
 ## Testing
 
-- 230 tests in `tests/` — `poetry run pytest`
+- 247 tests in `tests/` — `poetry run pytest`
 - `test_chat.py` (83): agent roles, welcome messages, `_get_agents` parsing, server check, slash commands (including /history, /resume, /delete-chat), repo detection, SSE parsing, inline delegation, tab-completion, command extraction, placeholders
-- `test_env_loader.py` (21): split_vars classification, load_all_env order (global → legacy → per-repo), .env directory handling, var set overlap checks
-- `test_rules_loader.py` (18): rules dir reading, load_rules merge order, agent targeting, auto-refresh, list_rules filtering
+- `test_chat_history.py` (29): session CRUD, title generation, persistence, list sorting, repo filtering, build_prompt for single/multi-turn
 - `test_cli.py` (24): server URL, help completeness (all 23 cmds, slash cmds, agents), version, doctor, config, curls, dispatcher
-- `test_git_client.py` (10): ref validation, branches, diff, log, status
+- `test_env_loader.py` (21): split_vars classification, load_all_env order (global → legacy → per-repo), .env directory handling, var set overlap checks
 - `test_jenkins_client.py` (20): Jenkins + ArgoCD client init, job path encoding + stripping, build version extraction
+- `test_rules_loader.py` (18): rules dir reading, load_rules merge order, agent targeting, auto-refresh, list_rules filtering
+- `test_connection_validator.py` (17): async backend validation (cursor CLI/HTTP, claude SDK/CLI, server + backend parallel, sync wrapper)
 - `test_routers.py` (14): all FastAPI routers, pipeline lifecycle, health/diagnostics
 - `test_testing_client.py` (18): test detection, coverage XML, pipeline state machine
-- `test_chat_history.py` (29): session CRUD, title generation, persistence, list sorting, repo filtering, build_prompt for single/multi-turn
+- `test_git_client.py` (10): ref validation, branches, diff, log, status
 
 ## Adding a New Agent
 

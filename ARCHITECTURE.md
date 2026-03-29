@@ -141,6 +141,8 @@ routers/completions.py
 | `env_loader.py` | Two-tier config: `~/.code-agents/config.env` (global) + `.env.code-agents` (per-repo) |
 | `rules_loader.py` | Two-tier rules: `~/.code-agents/rules/` (global) + `.code-agents/rules/` (project). Auto-refresh on every message |
 | `chat_history.py` | Session persistence: auto-save to `~/.code-agents/chat_history/`, resume, list, delete |
+| `token_tracker.py` | Token usage: per message/session/day/month, CSV at `~/.code-agents/token_usage.csv`, backend+model breakdown |
+| `connection_validator.py` | Async backend connection validation: cursor CLI/HTTP, claude SDK/CLI, server health. Runs at session start |
 | `setup.py` | Interactive setup wizard (7 steps) |
 | `setup_ui.py` | Setup UI: colors, prompts, validators |
 | `setup_env.py` | Env file: parse, write, sections |
@@ -344,7 +346,7 @@ API: `/pipeline/start`, `/pipeline/{id}/status`, `/pipeline/{id}/advance`, `/pip
 
 ---
 
-## Test Structure (230 tests)
+## Test Structure (247 tests)
 
 | File | Tests | Coverage |
 |------|-------|----------|
@@ -354,6 +356,7 @@ API: `/pipeline/start`, `/pipeline/{id}/status`, `/pipeline/{id}/advance`, `/pip
 | `test_env_loader.py` | 21 | Variable classification, load order, .env directory handling |
 | `test_jenkins_client.py` | 20 | Job path encoding, build version extraction |
 | `test_rules_loader.py` | 18 | Rules merge order, agent targeting, auto-refresh |
+| `test_connection_validator.py` | 17 | Async backend validation (cursor CLI/HTTP, claude SDK/CLI, server + backend parallel) |
 | `test_routers.py` | 14 | All FastAPI routers, pipeline lifecycle |
 | `test_testing_client.py` | 18 | Test detection, coverage XML, pipeline state |
 | `test_git_client.py` | 10 | Ref validation, branches, diff, log, status |
