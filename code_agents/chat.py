@@ -21,6 +21,7 @@ from __future__ import annotations
 #   chat.py         — this file: REPL loop, slash commands, agent data
 
 import json
+import logging
 import os
 import re
 import sys
@@ -28,6 +29,8 @@ import time as _time_mod
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
+
+logger = logging.getLogger("code_agents.chat")
 
 # Re-export from split modules so existing imports (tests, etc.) still work
 from .chat_ui import (  # noqa: F401
@@ -42,7 +45,7 @@ from .chat_commands import (  # noqa: F401
     _offer_run_commands, _run_single_command,
     _save_command_to_rules, _is_command_trusted,
 )
-from .chat_server import (  # noqa: F401
+from .chat_server import (  # noqa: F401/
     _server_url, _check_server, _check_workspace_trust,
     _get_agents, _stream_chat,
 )
@@ -175,9 +178,9 @@ AGENT_WELCOME = {
             "Full build → deploy → verify recommendation",
         ],
         [
-            "Build and deploy pg-acquiring-biz to dev",
-            "Build release branch with java 21",
-            "Deploy version 1.2.3 to dev-stable",
+            "Build and deploy {repo}",
+            "Build {repo} on release branch with java 21",
+            "Deploy the latest build — which environments are available?",
             "What's the status of the last build?",
         ],
     ),
@@ -235,7 +238,7 @@ AGENT_WELCOME = {
             "Query databases, check git status, run tests — all in one flow",
         ],
         [
-            "Build and deploy pg-acquiring-biz to dev",
+            "Build and deploy {repo} to dev",
             "Review the latest changes, fix issues, and run tests",
             "Run the full CI/CD pipeline for release branch",
             "Check what changed since last deploy, review, and build",
@@ -291,18 +294,25 @@ def _build_system_context(repo: str, agent_name: str) -> str:
         f"  4. Analyze the result, then propose the next command if needed\n"
         f"\n"
         f"RULES:\n"
-        f"  - Output only ONE ```bash block at a time — never multiple in one response\n"
-        f"  - The user will be asked 'Run this? [y/N]' — like Claude Code's CLI\n"
-        f"  - After approval, output is fed back to you automatically\n"
-        f"  - NEVER say 'I cannot reach the server' — output the curl and it will work\n"
-        f"  - NEVER try to call APIs directly — always use ```bash blocks\n"
+        f"  - Output EXACTLY ONE ```bash block per response — never 2, 3, or more\n"
+        f"  - After the ```bash block, STOP IMMEDIATELY — do not write more text or commands\n"
+        f"  - The user's terminal will run it and send the output back to you\n"
+        f"  - Then you can analyze and output the NEXT single command\n"
         f"\n"
-        f"EXAMPLE:\n"
-        f"  'Let me check the available Jenkins jobs.'\n"
+        f"FORBIDDEN (never do these):\n"
+        f"  - NEVER output multiple ```bash blocks in one response\n"
+        f"  - NEVER say 'I cannot reach the server' or 'request was rejected'\n"
+        f"  - NEVER write step-by-step instructions for the user to run manually\n"
+        f"  - NEVER say 'paste the output here' or 'run this on your machine'\n"
+        f"  - NEVER list Step 1, Step 2, Step 3 with separate bash blocks\n"
+        f"  - If you need multiple commands, output ONE, wait for result, then output the next\n"
+        f"\n"
+        f"CORRECT PATTERN:\n"
+        f"  You: 'Let me check the build job parameters.'\n"
         f"  ```bash\n"
-        f"  curl -s http://127.0.0.1:8000/jenkins/jobs?folder=pg2/pg2-dev-build-jobs\n"
+        f"  curl -s http://127.0.0.1:8000/jenkins/jobs/path/parameters\n"
         f"  ```\n"
-        f"  (wait for result, then continue)\n"
+        f"  [STOP HERE — wait for output — then respond with analysis + next command]\n"
         f"--- End Bash Tool ---"
     )
     if rules_text:
@@ -318,9 +328,19 @@ def _build_system_context(repo: str, agent_name: str) -> str:
 # (575 lines of duplicate code removed — now in chat_ui.py, chat_commands.py, chat_server.py)
 
 
-def _print_welcome(agent_name: str) -> None:
-    """Print welcome for an agent using AGENT_WELCOME dict."""
-    _print_welcome_raw(agent_name, AGENT_WELCOME)
+def _print_welcome(agent_name: str, repo_path: str = "") -> None:
+    """Print welcome for an agent, substituting {repo} with actual repo name."""
+    repo_name = os.path.basename(repo_path) if repo_path else "my-project"
+
+    # Deep copy welcome data and substitute {repo} placeholder
+    welcome_data = {}
+    for k, (title, caps, examples) in AGENT_WELCOME.items():
+        welcome_data[k] = (
+            title,
+            caps,
+            [ex.replace("{repo}", repo_name) for ex in examples],
+        )
+    _print_welcome_raw(agent_name, welcome_data)
 
 
 # ---------------------------------------------------------------------------
@@ -479,6 +499,7 @@ def _handle_command(cmd: str, state: dict, url: str) -> Optional[str]:
         print(f"    {cyan('/open'):<16} View last response in pager (less/editor)")
         print(f"    {cyan('/restart'):<16} Restart the server")
         print(f"    {cyan('/rules'):<16} Show active rules for current agent")
+        print(f"    {cyan('/tokens'):<16} Show token usage (session, daily, monthly)")
         print(f"    {cyan('/session'):<16} Show current session ID")
         print(f"    {cyan('/history'):<16} List previous chat sessions")
         print(f"    {cyan('/resume <id>'):<16} Resume a chat by session ID")
@@ -530,7 +551,7 @@ def _handle_command(cmd: str, state: dict, url: str) -> Optional[str]:
         print(green(f"  ✓ Switched to: {bold(arg)} ({agents.get(arg, '')})"))
         print(f"    Session: {dim('new')}")
         print()
-        _print_welcome(arg)
+        _print_welcome(arg, state.get("repo_path", ""))
 
     elif command == "/session":
         sid = state.get("session_id")
@@ -633,6 +654,51 @@ def _handle_command(cmd: str, state: dict, url: str) -> Optional[str]:
         else:
             print(red(f"  Session '{arg}' not found. Use /history to list sessions."))
 
+    elif command == "/tokens":
+        from .token_tracker import get_session_summary, get_daily_summary, get_monthly_summary, get_yearly_summary, get_model_breakdown
+        session = get_session_summary()
+        daily = get_daily_summary()
+        monthly = get_monthly_summary()
+        yearly = get_yearly_summary()
+
+        print()
+        print(bold("  Token Usage"))
+        print()
+        print(f"  {bold('This session:')}")
+        print(f"    Messages:  {session['messages']}")
+        print(f"    Tokens:    {session['input_tokens']:,} in → {session['output_tokens']:,} out ({session['total_tokens']:,} total)")
+        if session['cost_usd']:
+            print(f"    Cost:      ${session['cost_usd']:.4f}")
+        print()
+        print(f"  {bold('Today:')}")
+        print(f"    Messages:  {daily['messages']}")
+        print(f"    Tokens:    {daily['total_tokens']:,}")
+        if daily['cost_usd']:
+            print(f"    Cost:      ${daily['cost_usd']:.4f}")
+        print()
+        print(f"  {bold('This month:')}")
+        print(f"    Messages:  {monthly['messages']}")
+        print(f"    Tokens:    {monthly['total_tokens']:,}")
+        if monthly['cost_usd']:
+            print(f"    Cost:      ${monthly['cost_usd']:.4f}")
+        print()
+        print(f"  {bold('This year:')}")
+        print(f"    Messages:  {yearly['messages']}")
+        print(f"    Tokens:    {yearly['total_tokens']:,}")
+        if yearly['cost_usd']:
+            print(f"    Cost:      ${yearly['cost_usd']:.4f}")
+
+        breakdown = get_model_breakdown()
+        if breakdown:
+            print()
+            print(f"  {bold('By backend/model:')}")
+            for b in breakdown:
+                print(f"    {cyan(b['backend'])} / {b['model']}: {b['total_tokens']:,} tokens, {b['messages']} msgs")
+
+        print()
+        print(dim(f"  CSV: ~/.code-agents/token_usage.csv"))
+        print()
+
     elif command == "/rules":
         from .rules_loader import list_rules
         repo = state.get("repo_path", ".")
@@ -720,12 +786,22 @@ def _print_session_summary(
     elapsed = _t.monotonic() - session_start
     duration = _format_session_duration(elapsed)
 
+    # Get token totals from tracker
+    from .token_tracker import get_session_summary
+    usage = get_session_summary()
+    total_tokens = usage.get("total_tokens", 0)
+    cost = usage.get("cost_usd", 0)
+
     print()
     print(f"  {bold(cyan('━━━ Session Summary ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'))}")
     print(f"  {dim('Agent:')}       {bold(agent_name)}")
     print(f"  {dim('Messages:')}    {message_count}")
     print(f"  {dim('Commands:')}    {commands_run}")
     print(f"  {dim('Duration:')}    {bold(duration)}")
+    if total_tokens:
+        print(f"  {dim('Tokens:')}      {usage.get('input_tokens', 0):,} in → {usage.get('output_tokens', 0):,} out ({total_tokens:,} total)")
+    if cost > 0:
+        print(f"  {dim('Cost:')}        ${cost:.4f}")
     print(f"  {bold(cyan('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'))}")
     print()
 
@@ -852,6 +928,28 @@ def chat_main(args: list[str] | None = None):
     if not _check_workspace_trust(repo_path):
         return
 
+    # Pre-flight: async backend connection validation
+    try:
+        import asyncio
+        from .connection_validator import validate_backend
+        result = asyncio.run(validate_backend())
+        if not result.valid:
+            print()
+            print(yellow(f"  ⚠ Backend check: {result.message}"))
+            print(dim(f"    Backend: {result.backend}"))
+            print()
+            try:
+                answer = input("  Continue anyway? [y/N]: ").strip().lower()
+            except (EOFError, KeyboardInterrupt):
+                print()
+                return
+            if answer not in ("y", "yes"):
+                return
+        else:
+            logger.info("Backend validation passed: %s — %s", result.backend, result.message)
+    except Exception as e:
+        logger.debug("Backend validation skipped: %s", e)
+
     # State
     state = {
         "agent": agent_name,
@@ -889,7 +987,7 @@ def chat_main(args: list[str] | None = None):
             return
 
     # Tab-completion for slash commands and agent names
-    _slash_commands = ["/help", "/quit", "/exit", "/agents", "/agent", "/run", "/exec", "/execute", "/open", "/restart", "/rules", "/session", "/clear", "/history", "/resume", "/delete-chat"]
+    _slash_commands = ["/help", "/quit", "/exit", "/agents", "/agent", "/run", "/exec", "/execute", "/open", "/restart", "/rules", "/tokens", "/session", "/clear", "/history", "/resume", "/delete-chat"]
     _completer = _make_completer(_slash_commands, list(agents.keys()))
     _has_readline = False
 
@@ -931,7 +1029,7 @@ def chat_main(args: list[str] | None = None):
     print()
 
     # Welcome message
-    _print_welcome(agent_name)
+    _print_welcome(agent_name, repo_path)
 
     # REPL
     while True:
@@ -1153,6 +1251,12 @@ def chat_main(args: list[str] | None = None):
                 elif piece_type == "session_id":
                     state["session_id"] = piece_content
 
+                elif piece_type == "usage":
+                    state["_last_usage"] = piece_content
+
+                elif piece_type == "duration_ms":
+                    state["_last_duration_ms"] = piece_content
+
                 elif piece_type == "error":
                     if not _stop_spin.is_set():
                         _stop_spin.set()
@@ -1181,99 +1285,77 @@ def chat_main(args: list[str] | None = None):
                     from .chat_history import _save as _persist
                     _persist(state["_chat_session"])
 
-            # Auto-collapse long responses (like Claude Code) with Ctrl+O toggle
+            # Long response: Ctrl+O to toggle collapse/expand (safe cbreak mode)
             response_lines = full_text.splitlines()
             if len(response_lines) > 25:
-                # Clear the streamed output and show collapsed view
-                lines_to_clear = len(response_lines) + 2
-                for _ in range(lines_to_clear):
-                    sys.stdout.write(f"\033[A\033[2K")
-                sys.stdout.flush()
+                _is_collapsed = True
 
-                _is_expanded = False
-
-                def _show_collapsed():
-                    print(f"  {agent_label} › ", end="")
-                    for line in response_lines[:8]:
+                def _print_collapsed():
+                    print(f"  {dim('─' * 60)}")
+                    for line in response_lines[:6]:
                         print(f"  {_render_markdown(line)}")
-                    print(f"  {dim(f'  ... ({len(response_lines) - 16} lines collapsed) ...')}")
-                    for line in response_lines[-8:]:
+                    print(f"  {dim(f'  ··· {len(response_lines) - 12} lines hidden ···')}")
+                    for line in response_lines[-6:]:
                         print(f"  {_render_markdown(line)}")
-                    print()
-                    print(f"  {dim(f'Ctrl+O to expand ({len(response_lines)} lines) · any key to continue')}")
+                    print(f"  {dim('─' * 60)}")
+                    print(f"  {dim(f'({len(response_lines)} lines) Ctrl+O=expand · Enter=continue')}")
 
-                def _show_expanded():
-                    print(f"  {agent_label} › ")
+                def _print_expanded():
+                    print(f"  {dim('─' * 60)}")
                     for line in response_lines:
                         print(f"  {_render_markdown(line)}")
-                    print()
-                    print(f"  {dim(f'Ctrl+O to collapse · any key to continue')}")
+                    print(f"  {dim('─' * 60)}")
+                    print(f"  {dim(f'({len(response_lines)} lines) Ctrl+O=collapse · Enter=continue')}")
 
-                def _count_display_lines(expanded: bool) -> int:
-                    if expanded:
-                        return len(response_lines) + 3  # agent label + lines + blank + hint
-                    else:
-                        return 8 + 1 + 8 + 3  # first8 + collapsed + last8 + agent+blank+hint
-
-                _show_collapsed()
+                _print_collapsed()
 
                 try:
-                    import tty
-                    import termios
-                    import signal
-
+                    import tty, termios
                     fd = sys.stdin.fileno()
-                    old_settings = termios.tcgetattr(fd)
-
-                    # Ensure terminal is ALWAYS restored — even on signals
-                    def _restore_terminal(signum=None, frame=None):
-                        try:
-                            termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
-                        except Exception:
-                            pass
-
-                    old_sigint = signal.signal(signal.SIGINT, _restore_terminal)
-                    old_sigterm = signal.signal(signal.SIGTERM, _restore_terminal)
-
+                    saved = termios.tcgetattr(fd)
                     try:
                         while True:
-                            tty.setraw(fd)
-                            try:
-                                ch = sys.stdin.read(1)
-                            except Exception:
-                                break
-                            finally:
-                                # ALWAYS restore immediately after raw read
-                                termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+                            tty.setcbreak(fd)
+                            ch = sys.stdin.read(1)
+                            termios.tcsetattr(fd, termios.TCSANOW, saved)
 
-                            if not ch or ord(ch) == 3:  # Ctrl+C or EOF
-                                break
-
-                            if ord(ch) == 15:  # Ctrl+O — toggle
-                                clear_count = _count_display_lines(_is_expanded)
-                                for _ in range(clear_count):
-                                    sys.stdout.write(f"\033[A\033[2K")
-                                sys.stdout.flush()
-
-                                _is_expanded = not _is_expanded
-                                if _is_expanded:
-                                    _show_expanded()
+                            if ord(ch) == 15:  # Ctrl+O
+                                _is_collapsed = not _is_collapsed
+                                if _is_collapsed:
+                                    _print_collapsed()
                                 else:
-                                    _show_collapsed()
+                                    _print_expanded()
                             else:
                                 break
                     finally:
-                        # Triple-ensure terminal is restored
-                        _restore_terminal()
-                        signal.signal(signal.SIGINT, old_sigint)
-                        signal.signal(signal.SIGTERM, old_sigterm)
+                        termios.tcsetattr(fd, termios.TCSANOW, saved)
                 except (ImportError, OSError, ValueError):
-                    pass
-                print()
+                    print(f"  {dim('Type /open to view full response')}")
 
-            # Show elapsed time
+            # Show elapsed time + token usage
             elapsed = _time.monotonic() - _response_start
-            print(f"  {dim(f'✻ Response took {_format_elapsed(elapsed)}')}")
+            usage = state.pop("_last_usage", None)
+            dur_ms = state.pop("_last_duration_ms", 0)
+
+            usage_str = ""
+            if usage:
+                inp = usage.get("input_tokens", 0) or 0
+                out = usage.get("output_tokens", 0) or 0
+                if inp or out:
+                    usage_str = f" · {inp}→{out} tokens"
+
+                # Record to CSV
+                from .token_tracker import record_usage
+                record_usage(
+                    agent=current_agent,
+                    backend=os.getenv("CODE_AGENTS_BACKEND", "cursor"),
+                    model=os.getenv("CODE_AGENTS_CLAUDE_CLI_MODEL", "composer 1.5"),
+                    usage=usage,
+                    duration_ms=dur_ms or int(elapsed * 1000),
+                    session_id=state.get("session_id", ""),
+                )
+
+            print(f"  {dim(f'✻ Response took {_format_elapsed(elapsed)}{usage_str}')}")
             print()
 
             # Agentic loop: detect commands → run → feed output back → agent continues

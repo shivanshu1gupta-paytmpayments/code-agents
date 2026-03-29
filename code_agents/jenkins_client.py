@@ -338,16 +338,20 @@ class JenkinsClient:
           - Artifact upload lines containing version numbers
         """
         patterns = [
-            # Docker image tag: repo/image:version
-            r"(?:image|tag|pushing|pushed|built)[:\s]+\S+:([v]?[\d]+[\d._-]+\S*)",
-            # BUILD_VERSION=xxx or version=xxx
-            r"(?:BUILD_VERSION|ARTIFACT_VERSION|version|VERSION)\s*[=:]\s*([v]?[\d]+[\w._-]*)",
+            # Docker: naming to registry.com/service:tag or tagging image:tag
+            r"(?:naming|tagging|pushing|pushed)\s+\S+:([^\s\"']+)",
+            # Docker image tag: image:1.2.3-42
+            r"(?:image|tag|built)[:\s]+\S+:([v]?[\d]+[\d._-]+\S*)",
+            # BUILD_VERSION=xxx or version=xxx or IMAGE_TAG=xxx
+            r"(?:BUILD_VERSION|ARTIFACT_VERSION|IMAGE_TAG|version|VERSION)\s*[=:]\s*([v]?[\d]+[\w._-]*)",
             # Build tag: NNN or Build #NNN
             r"(?:build\s*(?:tag|number|no|#))\s*[=:#]?\s*(\d+)",
-            # Uploading artifact-1.2.3.jar
+            # Uploading/deploying artifact-1.2.3.jar
             r"(?:upload|deploy|publish)\S*\s+\S*?-(\d+[\d._-]+\S*?)(?:\.jar|\.war|\.zip|\.tar)",
-            # Image digest or version in last 50 lines (most specific results at end)
+            # Successfully built / digest
             r"(?:Successfully built|digest:)\s+\S*?([v]?[\d]+[\d._-]+\S*)",
+            # Finished: SUCCESS with build display name #NNN
+            r"#(\d+)\s+(?:SUCCESS|Finished)",
         ]
 
         # Search last 200 lines (build version usually near the end)
@@ -401,7 +405,7 @@ class JenkinsClient:
             build_version = self.extract_build_version(log_text)
             # Keep last 30 lines for summary
             log_lines = log_text.strip().splitlines()
-            log_tail = "\n".join(log_lines[-30:])
+            log_tail = "\n".join(log_lines[-100:])
         except JenkinsError:
             pass
 

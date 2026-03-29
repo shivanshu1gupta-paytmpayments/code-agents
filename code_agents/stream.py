@@ -204,6 +204,11 @@ async def stream_response(agent: AgentConfig, req: CompletionRequest):
                 }
                 if show_session and captured_session_id:
                     final_chunk["session_id"] = captured_session_id
+                # Include usage data in final chunk for client-side token tracking
+                if hasattr(message, "usage") and message.usage:
+                    final_chunk["usage"] = message.usage
+                if hasattr(message, "duration_ms"):
+                    final_chunk["duration_ms"] = message.duration_ms
 
                 yield sse(final_chunk)
                 yield "data: [DONE]\n\n"

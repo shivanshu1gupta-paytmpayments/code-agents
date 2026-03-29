@@ -108,6 +108,12 @@ def _stream_chat(
                 if "session_id" in chunk:
                     yield ("session_id", chunk["session_id"])
 
+                if "usage" in chunk:
+                    yield ("usage", chunk["usage"])
+
+                if "duration_ms" in chunk:
+                    yield ("duration_ms", chunk["duration_ms"])
+
                 choices = chunk.get("choices", [])
                 if not choices:
                     continue

@@ -111,16 +111,26 @@ def _tab_selector(prompt_text: str, options: list[str], default: int = 0) -> int
     """
     selected = default
 
+    _rendered_lines = [0]  # track how many lines we printed
+
     def _render():
-        parts = []
+        # Clear previous render
+        for _ in range(_rendered_lines[0]):
+            sys.stdout.write(f"\033[A\033[2K")
+        if _rendered_lines[0] > 0:
+            sys.stdout.write(f"\r")
+        sys.stdout.flush()
+
+        count = 0
         for i, opt in enumerate(options):
             if i == selected:
-                parts.append(bold(green(f"❯ {opt}")))
+                print(f"    {bold(green(f'❯ {opt}'))}")
             else:
-                parts.append(dim(f"  {opt}"))
-        line = "    ".join(parts)
-        sys.stdout.write(f"\r  {line}  {dim('(Tab=switch, Enter=confirm)')}")
-        sys.stdout.flush()
+                print(f"    {dim(f'  {opt}')}")
+            count += 1
+        print(f"    {dim('(Tab=switch, Enter=confirm)')}")
+        count += 1
+        _rendered_lines[0] = count
 
     print(f"  {bold(prompt_text)}")
     _render()

@@ -74,9 +74,34 @@ def _extract_commands(text: str) -> list[str]:
 _PLACEHOLDER_ANGLE_RE = re.compile(r"<([A-Z][A-Z0-9_]+)>")
 _PLACEHOLDER_CURLY_RE = re.compile(r"\{([a-z][a-z0-9_]*)\}")
 
+# Context from previous command outputs — auto-fills known placeholders
+_command_context: dict[str, str] = {}
+
+
+def _extract_context_from_output(output: str) -> None:
+    """Extract known values from command output for auto-filling future placeholders."""
+    try:
+        import json as _j
+        data = _j.loads(output.strip())
+        if isinstance(data, dict):
+            # Build version from build-and-wait response
+            if data.get("build_version"):
+                _command_context["BUILD_VERSION"] = str(data["build_version"])
+                _command_context["build_version"] = str(data["build_version"])
+                _command_context["image_tag"] = str(data["build_version"])
+            # Build number
+            if data.get("number"):
+                _command_context["BUILD_NUMBER"] = str(data["number"])
+                _command_context["build_number"] = str(data["number"])
+            # Job name
+            if data.get("job_name"):
+                _command_context["job_name"] = str(data["job_name"])
+    except (ValueError, TypeError):
+        pass
+
 
 def _resolve_placeholders(cmd: str) -> Optional[str]:
-    """Detect placeholder tokens and prompt user to fill them."""
+    """Detect placeholder tokens, auto-fill from context, prompt for unknown."""
     found: list[tuple[str, str]] = []
     for m in _PLACEHOLDER_ANGLE_RE.finditer(cmd):
         found.append((m.group(0), m.group(1)))
@@ -93,18 +118,30 @@ def _resolve_placeholders(cmd: str) -> Optional[str]:
             seen.add(token)
             unique.append((token, name))
 
-    print(f"    {yellow('Placeholders detected — fill in values:')}")
     replacements = {}
+    needs_input = []
+
+    # Auto-fill from context first
     for token, name in unique:
-        try:
-            value = input(f"    {bold(token)}: ").strip()
-        except (EOFError, KeyboardInterrupt):
-            print()
-            return None
-        if not value:
-            print(dim(f"    Skipped (no value for {token})."))
-            return None
-        replacements[token] = value
+        if name in _command_context:
+            replacements[token] = _command_context[name]
+            print(f"    {green('✓')} {bold(token)} = {cyan(_command_context[name])} {dim('(from previous build)')}")
+        else:
+            needs_input.append((token, name))
+
+    # Prompt for remaining unknowns
+    if needs_input:
+        print(f"    {yellow('Placeholders — fill in values:')}")
+        for token, name in needs_input:
+            try:
+                value = input(f"    {bold(token)}: ").strip()
+            except (EOFError, KeyboardInterrupt):
+                print()
+                return None
+            if not value:
+                print(dim(f"    Skipped (no value for {token})."))
+                return None
+            replacements[token] = value
 
     for token, value in replacements.items():
         cmd = cmd.replace(token, value)
@@ -174,7 +211,7 @@ def _run_single_command(cmd: str, cwd: str) -> str:
     print(f"  {bold(green('● BASH'))} {dim('running...')}")
 
     term_width = shutil.get_terminal_size((80, 24)).columns
-    box_width = min(term_width - 4, 100)
+    box_width = term_width - 4  # use full terminal width, no cap
     inner_width = box_width - 2
 
     def _box_line(text: str) -> str:
@@ -345,7 +382,7 @@ def _offer_run_commands(
         import shutil
         import textwrap
         term_width = shutil.get_terminal_size((80, 24)).columns
-        box_width = min(term_width - 4, 100)
+        box_width = term_width - 4
         inner = box_width - 2
 
         trusted = _is_command_trusted(cmd, agent_name, cwd) if agent_name else False
@@ -399,6 +436,8 @@ def _offer_run_commands(
         try:
             output = _run_single_command(resolved, cwd)
             results.append({"command": resolved, "output": output})
+            # Extract context for future placeholder auto-fill
+            _extract_context_from_output(output)
         except (EOFError, KeyboardInterrupt):
             print(dim("\n  Command interrupted."))
             continue
